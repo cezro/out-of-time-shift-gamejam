@@ -164,8 +164,10 @@ static func step_vertical_velocity(
 	dt: float
 ) -> Dictionary:
 	var safe_dt: float = maxf(0.0, dt) if is_finite(dt) else 0.0
-	var new_coyote: float = config.coyote_time_max if is_grounded else maxf(0.0, coyote_timer - safe_dt)
-	var new_buffer: float = config.jump_buffer_max if jump_pressed else maxf(0.0, jump_buffer_timer - safe_dt)
+	var safe_coyote: float = maxf(0.0, coyote_timer) if is_finite(coyote_timer) else 0.0
+	var safe_buffer: float = maxf(0.0, jump_buffer_timer) if is_finite(jump_buffer_timer) else 0.0
+	var new_coyote: float = config.coyote_time_max if is_grounded else maxf(0.0, safe_coyote - safe_dt)
+	var new_buffer: float = config.jump_buffer_max if jump_pressed else maxf(0.0, safe_buffer - safe_dt)
 	var new_vy: float = current_vy if is_finite(current_vy) else 0.0
 	var did_jump: bool = false
 
@@ -192,12 +194,29 @@ static func step_vertical_velocity(
 
 ## Starts Kinetic Dash, sets invulnerability, and cancels recovery frames of light slashes by zeroing slash_cooldown.
 static func start_dash(player: PlayerState, input_x: float) -> bool:
-	if player == null or player.dash_cooldown > 0.0:
+	if player == null:
+		return false
+	if not is_finite(player.dash_cooldown):
+		player.dash_cooldown = 0.0
+	if not is_finite(player.position.x) or not is_finite(player.position.y):
+		player.position = Vector2(
+			player.position.x if is_finite(player.position.x) else 0.0,
+			player.position.y if is_finite(player.position.y) else -200.0
+		)
+	if not is_finite(player.velocity.x) or not is_finite(player.velocity.y):
+		player.velocity = Vector2(
+			player.velocity.x if is_finite(player.velocity.x) else 0.0,
+			player.velocity.y if is_finite(player.velocity.y) else 0.0
+		)
+	if not is_finite(player.facing) or absf(player.facing) < 1e-4:
+		player.facing = 1.0
+	if player.dash_cooldown > 0.0:
 		return false
 
 	player.dash_timer = player.config.dash_duration
 	player.dash_cooldown = player.config.dash_cooldown_max
-	player.invulnerability_timer = maxf(player.invulnerability_timer, player.config.dash_duration)
+	var safe_invuln: float = maxf(0.0, player.invulnerability_timer) if is_finite(player.invulnerability_timer) else 0.0
+	player.invulnerability_timer = maxf(safe_invuln, player.config.dash_duration)
 	# Cancel recovery frames of light slashes on Kinetic Dash!
 	player.slash_cooldown = 0.0
 	player.is_slamming = false
@@ -220,6 +239,18 @@ static func step_wall_slide_and_rebound(
 ) -> bool:
 	if player == null:
 		return false
+	if not is_finite(player.position.x) or not is_finite(player.position.y):
+		player.position = Vector2(
+			player.position.x if is_finite(player.position.x) else 0.0,
+			player.position.y if is_finite(player.position.y) else -200.0
+		)
+	if not is_finite(player.velocity.x) or not is_finite(player.velocity.y):
+		player.velocity = Vector2(
+			player.velocity.x if is_finite(player.velocity.x) else 0.0,
+			player.velocity.y if is_finite(player.velocity.y) else 0.0
+		)
+	if not is_finite(player.facing) or absf(player.facing) < 1e-4:
+		player.facing = 1.0
 
 	if not player.is_grounded and is_finite(touching_wall_normal_x) and absf(touching_wall_normal_x) > 0.01:
 		var normal_x: float = signf(touching_wall_normal_x)
@@ -249,7 +280,14 @@ static func step_wall_slide_and_rebound(
 
 ## Initiates an airborne Downward Slam attack (fast vertical drop towards floor/platforms).
 static func start_downward_slam(player: PlayerState) -> bool:
-	if player == null or player.is_grounded or player.is_slamming:
+	if player == null:
+		return false
+	if not is_finite(player.position.x) or not is_finite(player.position.y):
+		player.position = Vector2(
+			player.position.x if is_finite(player.position.x) else 0.0,
+			player.position.y if is_finite(player.position.y) else -200.0
+		)
+	if player.is_grounded or player.is_slamming:
 		return false
 	player.is_slamming = true
 	player.is_wall_sliding = false

@@ -731,6 +731,21 @@ func perform_timeline_shift(target_era: int = -1) -> Dictionary:
 # Deterministic Simulation Step
 # ---------------------------------------------------------------------------------------------
 
+static func _safe_float(v: Variant, fallback: float = 0.0) -> float:
+	if v is float or v is int:
+		var f: float = float(v)
+		return f if is_finite(f) else fallback
+	return fallback
+
+
+static func _safe_int(v: Variant, fallback: int = 0) -> int:
+	if v is int:
+		return v
+	if v is float:
+		return int(v) if is_finite(v) else fallback
+	return fallback
+
+
 func step_simulation(real_dt: float, input_override: Dictionary = {}) -> void:
 	_ensure_scene_nodes()
 
@@ -751,7 +766,8 @@ func step_simulation(real_dt: float, input_override: Dictionary = {}) -> void:
 	if cycle_custom_pressed:
 		cycle_player_modular_customization()
 
-	var move_x: float = float(input_override.get("move_x", input_override.get("input_x", input_override.get("axis_x", 0.0))))
+	var raw_move_x: Variant = input_override.get("move_x", input_override.get("input_x", input_override.get("axis_x", 0.0)))
+	var move_x: float = _safe_float(raw_move_x, 0.0)
 	if bool(input_override.get("move_left", input_override.get("left", false))):
 		move_x -= 1.0
 	if bool(input_override.get("move_right", input_override.get("right", false))):
@@ -768,9 +784,9 @@ func step_simulation(real_dt: float, input_override: Dictionary = {}) -> void:
 	var parry_pressed: bool = bool(input_override.get("parry_pressed", input_override.get("parry", input_override.get("deflect", false))))
 	var warp_pressed: bool = bool(input_override.get("warp_pressed", input_override.get("warp", input_override.get("teleport", false))))
 	var timeline_shift_pressed: bool = bool(input_override.get("timeline_shift", input_override.get("shift_timeline", input_override.get("tab", false))))
-	var target_era_input: int = int(input_override.get("target_era", -1))
+	var target_era_input: int = _safe_int(input_override.get("target_era", -1), -1)
 
-	var shift_jump_to: int = int(input_override.get("shift_gear", input_override.get("jump_to", input_override.get("gear", -1))))
+	var shift_jump_to: int = _safe_int(input_override.get("shift_gear", input_override.get("jump_to", input_override.get("gear", -1))), -1)
 	var shift_held: bool = bool(input_override.get("shift_held", input_override.get("shift", shift_jump_to >= 0)))
 	var shift_drag: Vector2 = Vector2.ZERO
 	if input_override.get("shift_drag") is Vector2:
@@ -779,10 +795,14 @@ func step_simulation(real_dt: float, input_override: Dictionary = {}) -> void:
 		shift_drag = input_override.get("drag")
 	elif input_override.get("mouse_delta") is Vector2:
 		var md: Vector2 = input_override.get("mouse_delta")
-		shift_drag = Vector2(md.x, -md.y) / ChronoShiftModel.DRAG_PX_PER_UNIT
-	var shift_wheel: int = int(input_override.get("shift_wheel", input_override.get("wheel_steps", 0)))
+		if md.is_finite():
+			shift_drag = Vector2(md.x, -md.y) / ChronoShiftModel.DRAG_PX_PER_UNIT
+	if not shift_drag.is_finite():
+		shift_drag = Vector2.ZERO
+	var shift_wheel: int = _safe_int(input_override.get("shift_wheel", input_override.get("wheel_steps", 0)), 0)
 
-	var raw_aim_world: Vector2 = player.position + Vector2(player.facing * 120.0, 16.0)
+	var default_aim_world: Vector2 = player.position + Vector2(player.facing * 120.0, 16.0)
+	var raw_aim_world: Vector2 = default_aim_world
 	if input_override.get("aim_world") is Vector2:
 		raw_aim_world = input_override.get("aim_world")
 	elif input_override.get("cursor_world") is Vector2:
@@ -791,9 +811,13 @@ func step_simulation(real_dt: float, input_override: Dictionary = {}) -> void:
 		raw_aim_world = input_override.get("aim_pos")
 	elif input_override.get("mouse_world") is Vector2:
 		raw_aim_world = input_override.get("mouse_world")
+	if not raw_aim_world.is_finite():
+		raw_aim_world = default_aim_world
 	last_aim_world = raw_aim_world
 
 	var cursor_screen: Variant = input_override.get("cursor_screen", to_screen(raw_aim_world))
+	if cursor_screen is Vector2 and not (cursor_screen as Vector2).is_finite():
+		cursor_screen = to_screen(raw_aim_world)
 
 	# 2. Step Chronos Shift H-Gate & Time Control
 	if not shifter.is_held():
@@ -1230,7 +1254,7 @@ func _step_player_movement_and_environment(
 				player_dt
 			)
 
-			var wall_normal_x: float = float(input_override.get("wall_normal_x", 0.0))
+			var wall_normal_x: float = _safe_float(input_override.get("wall_normal_x", 0.0), 0.0)
 			if absf(wall_normal_x) < 0.01 and timeline.mode == TimelineSystem.GameMode.HORDE_ARENA:
 				if player.position.x <= -568.0:
 					wall_normal_x = 1.0

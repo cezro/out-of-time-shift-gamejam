@@ -47,6 +47,9 @@ func _init() -> void:
 	_run_test("attack_3b_invalid_slot_names_and_numbers_and_missing_textures", attack_3b_invalid_slot_names_and_numbers_and_missing_textures)
 	_run_test("attack_3c_ragdoll_split_preserves_custom_polygon_and_texture_parts", attack_3c_ragdoll_split_preserves_custom_polygon_and_texture_parts)
 
+	# 4. Playable GameController & AudioManager Adversarial Stress
+	_run_test("attack_4a_game_controller_and_audio_adversarial_stress", attack_4a_game_controller_and_audio_adversarial_stress)
+
 	print("=== ADVERSARIAL SUITE SUMMARY: %d / %d PASSED (%d FAILED) ===" % [_tests_passed, _tests_run, _tests_failed])
 	if _tests_failed > 0:
 		for f in _failures:
@@ -809,3 +812,60 @@ func attack_3c_ragdoll_split_preserves_custom_polygon_and_texture_parts() -> boo
 	) and ok
 
 	return ok
+
+
+# =============================================================================
+# 4. Playable GameController & AudioManager Adversarial Stress
+# =============================================================================
+
+func attack_4a_game_controller_and_audio_adversarial_stress() -> bool:
+	var ok: bool = true
+	var packed: PackedScene = load("res://scenes/main.tscn")
+	var inst: Node = packed.instantiate()
+	root.add_child(inst)
+	var ctrl: GameController = inst as GameController
+	ctrl._ensure_scene_nodes()
+
+	# Test corrupted/extreme input_override values & NaN/Inf deltas
+	for bad_dt in [NAN, INF, -INF, -5.0, 0.0, 1e6, 0.016]:
+		ctrl.step_simulation(bad_dt, {
+			"move_x": null,
+			"shift_gear": "invalid_gear",
+			"shift_wheel": NAN,
+			"shift_drag": Vector2(INF, -INF),
+			"aim_world": Vector2(INF, 0.0),
+			"cursor_screen": Vector2(NAN, INF),
+			"wall_normal_x": null,
+			"slash": true,
+			"heavy": true,
+			"parry": true,
+			"warp": true,
+			"dash": true,
+			"jump_pressed": true,
+			"timeline_shift": true,
+			"cycle_customization": true,
+		})
+		ok = _check(
+			_is_vec2_finite(ctrl.player.position) and _is_vec2_finite(ctrl.player.velocity),
+			"game_controller.gd: player position/velocity must stay finite under corrupted input_override (dt=%s)" % str(bad_dt)
+		) and ok
+
+	# Test AudioManager with NaN/Inf pitch/volume & unknown SFX keys
+	ctrl.audio_mgr.play_sfx("non_existent_sound_key", NAN, INF)
+	ctrl.audio_mgr.play_sfx("slash.wav", -INF, NAN)
+	ok = _check(
+		ctrl.audio_mgr.last_played_sfx == "slash",
+		"audio_manager.gd: play_sfx('slash.wav', -INF, NAN) must normalize key and not crash"
+	) and ok
+
+	ctrl._draw()
+	ok = _check(
+		ctrl.last_draw_primitive_count > 50,
+		"game_controller.gd: _draw() must render cleanly after adversarial simulation steps"
+	) and ok
+
+	if ctrl.get_parent() != null:
+		ctrl.get_parent().remove_child(ctrl)
+	ctrl.free()
+	return ok
+

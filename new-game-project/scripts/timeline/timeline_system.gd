@@ -159,13 +159,21 @@ class ChronoEchoData extends RefCounted:
 		p_radius: float = 95.0,
 		p_timer: float = 3.0
 	) -> void:
-		origin = p_origin
-		aim_dir = p_aim_dir.normalized() if p_aim_dir.length_squared() > 1e-6 else Vector2.RIGHT
+		origin = Vector2(
+			p_origin.x if is_finite(p_origin.x) else 0.0,
+			p_origin.y if is_finite(p_origin.y) else 0.0
+		)
+		aim_dir = (
+			p_aim_dir.normalized()
+			if (is_finite(p_aim_dir.x) and is_finite(p_aim_dir.y) and p_aim_dir.length_squared() > 1e-6)
+			else Vector2.RIGHT
+		)
 		era = p_era
 		echo_type = p_echo_type
-		radius = p_radius
-		timer = p_timer
-		max_timer = p_timer
+		radius = maxf(1.0, p_radius) if is_finite(p_radius) else 95.0
+		var safe_t: float = maxf(0.01, p_timer) if is_finite(p_timer) else 3.0
+		timer = safe_t
+		max_timer = safe_t
 
 class LoreGlyphData extends RefCounted:
 	var id: String = ""
@@ -367,6 +375,8 @@ class TimelineState extends RefCounted:
 		lore_glyphs.append(LoreGlyphData.new("glyph_future_zenith", "Singularity Spire Transmission", Vector2(1550.0, 150.0), TimelineEra.FUTURE, 28.0))
 
 	func is_near_chronos_well(player_pos: Vector2) -> ChronosWellData:
+		if not is_finite(player_pos.x) or not is_finite(player_pos.y):
+			return null
 		var best_well: ChronosWellData = null
 		var best_dist: float = INF
 		for well in chronos_wells:
@@ -384,14 +394,22 @@ class TimelineState extends RefCounted:
 		require_well: bool = false,
 		player_velocity: Vector2 = Vector2.ZERO
 	) -> Dictionary:
-		var well: ChronosWellData = is_near_chronos_well(player_pos)
+		var safe_pos := Vector2(
+			player_pos.x if is_finite(player_pos.x) else 0.0,
+			player_pos.y if is_finite(player_pos.y) else -200.0
+		)
+		var safe_vel := Vector2(
+			player_velocity.x if is_finite(player_velocity.x) else 0.0,
+			player_velocity.y if is_finite(player_velocity.y) else 0.0
+		)
+		var well: ChronosWellData = is_near_chronos_well(safe_pos)
 		if require_well and well == null:
 			return {
 				"shifted": false,
 				"new_era": current_era,
 				"previous_era": previous_era,
 				"detonated_echoes": [],
-				"preserved_velocity": player_velocity,
+				"preserved_velocity": safe_vel,
 				"checkpoint_updated": false,
 			}
 
@@ -405,7 +423,7 @@ class TimelineState extends RefCounted:
 				"new_era": current_era,
 				"previous_era": previous_era,
 				"detonated_echoes": [],
-				"preserved_velocity": player_velocity,
+				"preserved_velocity": safe_vel,
 				"checkpoint_updated": false,
 			}
 
@@ -439,7 +457,7 @@ class TimelineState extends RefCounted:
 			"new_era": current_era,
 			"previous_era": previous_era,
 			"detonated_echoes": detonated_echoes,
-			"preserved_velocity": player_velocity,
+			"preserved_velocity": safe_vel,
 			"checkpoint_updated": checkpoint_updated,
 		}
 

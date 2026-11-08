@@ -76,6 +76,15 @@ class SliceParticleData extends RefCounted:
 		gravity_scale = p_gravity_scale
 
 
+static func _safe_vec2(v: Vector2, fallback: Vector2 = Vector2.ZERO) -> Vector2:
+	if is_finite(v.x) and is_finite(v.y):
+		return v
+	return Vector2(
+		v.x if is_finite(v.x) else fallback.x,
+		v.y if is_finite(v.y) else fallback.y
+	)
+
+
 ## Pure calculation: derives linear and angular velocities for both ragdoll halves after a slice.
 ## Returns {"upper_vel": Vector2, "upper_ang_vel": float, "lower_vel": Vector2, "lower_ang_vel": float}
 static func calculate_slice_split_velocities(
@@ -83,15 +92,21 @@ static func calculate_slice_split_velocities(
 	slice_dir: Vector2,
 	impulse: Vector2
 ) -> Dictionary:
-	var dir: Vector2 = slice_dir.normalized() if slice_dir.length_squared() > 1e-4 else Vector2(0.0, 1.0)
+	var safe_base: Vector2 = _safe_vec2(base_velocity, Vector2.ZERO)
+	var safe_imp: Vector2 = _safe_vec2(impulse, Vector2.ZERO)
+	var dir: Vector2 = (
+		slice_dir.normalized()
+		if (is_finite(slice_dir.x) and is_finite(slice_dir.y) and slice_dir.length_squared() > 1e-4)
+		else Vector2(0.0, 1.0)
+	)
 	var normal: Vector2 = Vector2(-dir.y, dir.x)
 
 	# Upper half gets pushed upward and along normal
-	var upper_vel: Vector2 = base_velocity * 0.4 + impulse + normal * 180.0 + Vector2(0.0, 140.0)
+	var upper_vel: Vector2 = safe_base * 0.4 + safe_imp + normal * 180.0 + Vector2(0.0, 140.0)
 	var upper_ang_vel: float = (dir.x * -14.0) + (normal.y * 8.0)
 
 	# Lower half gets pushed slightly downward/opposite and along base motion
-	var lower_vel: Vector2 = base_velocity * 0.4 + impulse * 0.6 - normal * 140.0 + Vector2(0.0, 40.0)
+	var lower_vel: Vector2 = safe_base * 0.4 + safe_imp * 0.6 - normal * 140.0 + Vector2(0.0, 40.0)
 	var lower_ang_vel: float = (dir.x * 12.0) - (normal.y * 6.0)
 
 	return {
@@ -113,6 +128,10 @@ static func step_ragdoll_piece(
 ) -> bool:
 	if piece == null:
 		return false
+	piece.position = _safe_vec2(piece.position, Vector2(0.0, floor_y))
+	piece.velocity = _safe_vec2(piece.velocity, Vector2.ZERO)
+	piece.angular_velocity = piece.angular_velocity if is_finite(piece.angular_velocity) else 0.0
+	piece.rotation = piece.rotation if is_finite(piece.rotation) else 0.0
 	var safe_dt: float = maxf(0.0, dt) if is_finite(dt) else 0.0
 	if safe_dt <= 0.0:
 		return piece.lifetime > 0.0
@@ -168,6 +187,8 @@ static func step_slice_particle(
 ) -> bool:
 	if part == null:
 		return false
+	part.position = _safe_vec2(part.position, Vector2(0.0, floor_y))
+	part.velocity = _safe_vec2(part.velocity, Vector2.ZERO)
 	var safe_dt: float = maxf(0.0, dt) if is_finite(dt) else 0.0
 	if safe_dt <= 0.0:
 		return part.lifetime > 0.0

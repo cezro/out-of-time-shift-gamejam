@@ -133,7 +133,9 @@ static func launch_enemy(enemy: EnemyData, launch_vel: Vector2, stun_duration: f
 	enemy.juggle_timer = maxf(0.1, stun_duration) if is_finite(stun_duration) else 0.65
 	enemy.state_timer = enemy.juggle_timer
 	enemy.state_duration = enemy.juggle_timer
-	enemy.velocity = launch_vel
+	var safe_vx: float = launch_vel.x if is_finite(launch_vel.x) else 0.0
+	var safe_vy: float = launch_vel.y if is_finite(launch_vel.y) else 480.0
+	enemy.velocity = Vector2(safe_vx, safe_vy)
 	enemy.is_grounded = false
 	enemy.bullets_to_fire = 0
 
@@ -144,8 +146,18 @@ static func step_enemy_ai(enemy: EnemyData, player_pos: Vector2, dt: float) -> D
 	if enemy == null:
 		return {"move_dir": 0.0, "should_jump": false, "gravity_scale": 1.0}
 
+	if not is_finite(enemy.position.x) or not is_finite(enemy.position.y):
+		enemy.position = Vector2(
+			enemy.position.x if is_finite(enemy.position.x) else 0.0,
+			enemy.position.y if is_finite(enemy.position.y) else -200.0
+		)
+	var safe_player_pos := Vector2(
+		player_pos.x if is_finite(player_pos.x) else enemy.position.x,
+		player_pos.y if is_finite(player_pos.y) else enemy.position.y
+	)
+
 	var safe_dt: float = maxf(0.0, dt) if is_finite(dt) else 0.0
-	var to_player: Vector2 = player_pos - enemy.position
+	var to_player: Vector2 = safe_player_pos - enemy.position
 	var dist_x: float = absf(to_player.x)
 	var dist_y: float = to_player.y
 	var facing: float = 1.0 if to_player.x >= 0.0 else -1.0
@@ -186,8 +198,12 @@ static func step_enemy_ai(enemy: EnemyData, player_pos: Vector2, dt: float) -> D
 						enemy.state = StateKind.WINDUP
 						enemy.state_timer = windup_time
 						enemy.state_duration = windup_time
-						var aim_vec: Vector2 = (player_pos + Vector2(0.0, 16.0)) - (enemy.position + Vector2(facing * 20.0, 14.0))
-						enemy.laser_aim_dir = aim_vec.normalized() if aim_vec.length_squared() > 1.0 else Vector2(facing, 0.0)
+						var aim_vec: Vector2 = (safe_player_pos + Vector2(0.0, 16.0)) - (enemy.position + Vector2(facing * 20.0, 14.0))
+						enemy.laser_aim_dir = (
+							aim_vec.normalized()
+							if (is_finite(aim_vec.x) and is_finite(aim_vec.y) and aim_vec.length_squared() > 1.0)
+							else Vector2(facing, 0.0)
+						)
 					else:
 						if enemy.is_grounded and dist_y > 45.0:
 							should_jump = true
@@ -214,8 +230,12 @@ static func step_enemy_ai(enemy: EnemyData, player_pos: Vector2, dt: float) -> D
 
 		StateKind.WINDUP:
 			if enemy.enemy_type == EnemyType.SNIPER:
-				var aim_vec: Vector2 = (player_pos + Vector2(0.0, 16.0)) - (enemy.position + Vector2(facing * 20.0, 14.0))
-				enemy.laser_aim_dir = aim_vec.normalized() if aim_vec.length_squared() > 1.0 else Vector2(facing, 0.0)
+				var aim_vec: Vector2 = (safe_player_pos + Vector2(0.0, 16.0)) - (enemy.position + Vector2(facing * 20.0, 14.0))
+				enemy.laser_aim_dir = (
+					aim_vec.normalized()
+					if (is_finite(aim_vec.x) and is_finite(aim_vec.y) and aim_vec.length_squared() > 1.0)
+					else Vector2(facing, 0.0)
+				)
 			enemy.state_timer -= safe_dt
 			if enemy.state_timer <= 0.0:
 				var attack_time: float = 0.25
@@ -281,7 +301,18 @@ static func step_enemy_physics(
 ) -> void:
 	if enemy == null:
 		return
-	var safe_dt: float = maxf(0.0, dt) if is_finite(dt) else 0.0
+	if not is_finite(enemy.position.x) or not is_finite(enemy.position.y):
+		enemy.position = Vector2(
+			enemy.position.x if is_finite(enemy.position.x) else 0.0,
+			enemy.position.y if is_finite(enemy.position.y) else floor_y
+		)
+	if not is_finite(enemy.velocity.x) or not is_finite(enemy.velocity.y):
+		enemy.velocity = Vector2(
+			enemy.velocity.x if is_finite(enemy.velocity.x) else 0.0,
+			enemy.velocity.y if is_finite(enemy.velocity.y) else 0.0
+		)
+	var safe_move_dir: float = clampf(move_dir, -1.0, 1.0) if is_finite(move_dir) else 0.0
+	var safe_dt: float = clampf(dt, 0.0, 10.0) if (is_finite(dt) and dt > 0.0) else 0.0
 	if safe_dt <= 0.0:
 		return
 
@@ -291,7 +322,7 @@ static func step_enemy_physics(
 
 	var grav_mult: float = JUGGLE_GRAVITY_MULT if enemy.state == StateKind.JUGGLED else 1.0
 	if enemy.state != StateKind.JUGGLED:
-		enemy.velocity.x = move_dir * enemy.speed
+		enemy.velocity.x = safe_move_dir * enemy.speed
 	else:
 		enemy.velocity.x = move_toward(enemy.velocity.x, 0.0, 200.0 * safe_dt)
 	enemy.velocity.y -= (gravity * grav_mult) * safe_dt
@@ -337,6 +368,12 @@ static func step_gunner_attack(enemy: EnemyData, player_pos: Vector2, dt: float)
 	if not (enemy.enemy_type in [EnemyType.GUNNER_SEMI, EnemyType.GUNNER_AUTO, EnemyType.SNIPER]):
 		return null
 
+	if not is_finite(enemy.position.x) or not is_finite(enemy.position.y):
+		enemy.position = Vector2(
+			enemy.position.x if is_finite(enemy.position.x) else 0.0,
+			enemy.position.y if is_finite(enemy.position.y) else -200.0
+		)
+	var safe_facing: float = 1.0 if (not is_finite(enemy.facing) or enemy.facing >= 0.0) else -1.0
 	var safe_dt: float = maxf(0.0, dt) if is_finite(dt) else 0.0
 	if not enemy.attack_has_hit:
 		enemy.attack_has_hit = true
@@ -358,14 +395,19 @@ static func step_gunner_attack(enemy: EnemyData, player_pos: Vector2, dt: float)
 		enemy.bullets_to_fire -= 1
 		enemy.fire_cooldown = 0.09 if enemy.enemy_type == EnemyType.GUNNER_AUTO else 0.40
 
-		var muzzle: Vector2 = enemy.position + Vector2(enemy.facing * 20.0, 14.0)
-		var player_target: Vector2 = player_pos + Vector2(0.0, 16.0)
+		var muzzle: Vector2 = enemy.position + Vector2(safe_facing * 20.0, 14.0)
+		var safe_player: Vector2 = (
+			player_pos
+			if (is_finite(player_pos.x) and is_finite(player_pos.y))
+			else (enemy.position + Vector2(safe_facing * 200.0, 0.0))
+		)
+		var player_target: Vector2 = safe_player + Vector2(0.0, 16.0)
 		var to_target: Vector2 = player_target - muzzle
 		var aim_dir: Vector2
-		if to_target.length_squared() > 1.0:
+		if is_finite(to_target.x) and is_finite(to_target.y) and to_target.length_squared() > 1.0:
 			aim_dir = to_target.normalized()
 		else:
-			aim_dir = Vector2(1.0 if enemy.facing >= 0.0 else -1.0, 0.0)
+			aim_dir = Vector2(safe_facing, 0.0)
 
 		var bullet_speed: float = 540.0
 		var bullet_damage: float = 20.0

@@ -98,12 +98,12 @@ static func save_manifest(manifest_path: String, manifest: Dictionary) -> bool:
 
 
 static func register_modular_part(params: Dictionary) -> bool:
-	var manifest_path: String = str(params.get("manifest_path", DEFAULT_MANIFEST_PATH))
+	var manifest_path: String = RigSystem._Ser.safe_str(params.get("manifest_path"), DEFAULT_MANIFEST_PATH)
 	if manifest_path.is_empty():
 		manifest_path = DEFAULT_MANIFEST_PATH
 	manifest_path = _normalize_res_path(manifest_path)
 
-	var part_id: String = str(params.get("part_id", ""))
+	var part_id: String = RigSystem._Ser.safe_str(params.get("part_id"), "")
 	if part_id.is_empty():
 		printerr("[ERROR] register_modular_part requires a non-empty 'part_id'")
 		return false
@@ -112,12 +112,14 @@ static func register_modular_part(params: Dictionary) -> bool:
 	var spec = RigSystem.PartPieceSpec.from_dict(params)
 	var part_entry: Dictionary = spec.to_dict()
 	if params.has("target_loadout"):
-		part_entry["target_loadout"] = str(params.get("target_loadout"))
+		var target_lo: String = RigSystem._Ser.safe_str(params.get("target_loadout"), "")
+		if not target_lo.is_empty():
+			part_entry["target_loadout"] = target_lo
 
 	var parts_list: Array = manifest["parts"]
 	var replaced: bool = false
 	for i in range(parts_list.size()):
-		if parts_list[i] is Dictionary and str(parts_list[i].get("part_id", "")) == part_id:
+		if parts_list[i] is Dictionary and RigSystem._Ser.safe_str(parts_list[i].get("part_id"), "") == part_id:
 			parts_list[i] = part_entry
 			replaced = true
 			break
@@ -131,12 +133,12 @@ static func register_modular_part(params: Dictionary) -> bool:
 
 
 static func register_weapon_piece(params: Dictionary) -> bool:
-	var manifest_path: String = str(params.get("manifest_path", DEFAULT_MANIFEST_PATH))
+	var manifest_path: String = RigSystem._Ser.safe_str(params.get("manifest_path"), DEFAULT_MANIFEST_PATH)
 	if manifest_path.is_empty():
 		manifest_path = DEFAULT_MANIFEST_PATH
 	manifest_path = _normalize_res_path(manifest_path)
 
-	var piece_id: String = str(params.get("piece_id", ""))
+	var piece_id: String = RigSystem._Ser.safe_str(params.get("piece_id"), "")
 	if piece_id.is_empty():
 		printerr("[ERROR] register_weapon_piece requires a non-empty 'piece_id'")
 		return false
@@ -145,12 +147,14 @@ static func register_weapon_piece(params: Dictionary) -> bool:
 	var spec = RigSystem.WeaponPieceSpec.from_dict(params)
 	var piece_entry: Dictionary = spec.to_dict()
 	if params.has("target_loadout"):
-		piece_entry["target_loadout"] = str(params.get("target_loadout"))
+		var target_lo: String = RigSystem._Ser.safe_str(params.get("target_loadout"), "")
+		if not target_lo.is_empty():
+			piece_entry["target_loadout"] = target_lo
 
 	var wp_list: Array = manifest["weapon_pieces"]
 	var replaced: bool = false
 	for i in range(wp_list.size()):
-		if wp_list[i] is Dictionary and str(wp_list[i].get("piece_id", "")) == piece_id:
+		if wp_list[i] is Dictionary and RigSystem._Ser.safe_str(wp_list[i].get("piece_id"), "") == piece_id:
 			wp_list[i] = piece_entry
 			replaced = true
 			break

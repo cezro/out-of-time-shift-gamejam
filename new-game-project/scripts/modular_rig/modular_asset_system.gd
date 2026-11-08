@@ -83,12 +83,65 @@ const LOWER_BODY_SLOTS: Array[int] = [
 # ============================================================================
 
 class _Ser:
+	static func safe_float(v: Variant, fallback: float = 0.0) -> float:
+		if v is float or v is int:
+			var f: float = float(v)
+			return f if is_finite(f) else fallback
+		if v is String:
+			var s: String = v.strip_edges()
+			if s.is_valid_float():
+				var f: float = s.to_float()
+				return f if is_finite(f) else fallback
+		return fallback
+
+	static func safe_int(v: Variant, fallback: int = 0) -> int:
+		if v is int:
+			return v
+		if v is float:
+			return int(v) if is_finite(v) else fallback
+		if v is String:
+			var s: String = v.strip_edges()
+			if s.is_valid_int():
+				return s.to_int()
+			elif s.is_valid_float():
+				var f: float = s.to_float()
+				return int(f) if is_finite(f) else fallback
+		return fallback
+
+	static func safe_str(v: Variant, fallback: String = "") -> String:
+		if v == null:
+			return fallback
+		if v is String:
+			return v
+		return str(v)
+
+	static func safe_bool(v: Variant, fallback: bool = false) -> bool:
+		if v == null:
+			return fallback
+		if v is bool:
+			return v
+		if v is int or v is float:
+			var f: float = float(v)
+			return is_finite(f) and f != 0.0
+		if v is String:
+			var s: String = v.strip_edges().to_lower()
+			if s in ["true", "1", "yes"]:
+				return true
+			if s in ["false", "0", "no"]:
+				return false
+		return fallback
+
 	static func color_to_dict(c: Color) -> Dictionary:
 		return {"r": c.r, "g": c.g, "b": c.b, "a": c.a, "hex": c.to_html(true)}
 
 	static func color_from_variant(v: Variant, fallback: Color = Color.WHITE) -> Color:
 		if v is Color:
-			return v
+			return Color(
+				safe_float(v.r, fallback.r),
+				safe_float(v.g, fallback.g),
+				safe_float(v.b, fallback.b),
+				safe_float(v.a, fallback.a)
+			)
 		if v is String:
 			var s: String = v
 			if Color.html_is_valid(s):
@@ -98,19 +151,29 @@ class _Ser:
 			var d: Dictionary = v
 			if d.has("r") and d.has("g") and d.has("b"):
 				return Color(
-					float(d.get("r", 1.0)),
-					float(d.get("g", 1.0)),
-					float(d.get("b", 1.0)),
-					float(d.get("a", 1.0))
+					safe_float(d.get("r"), fallback.r),
+					safe_float(d.get("g"), fallback.g),
+					safe_float(d.get("b"), fallback.b),
+					safe_float(d.get("a"), 1.0)
 				)
-			if d.has("hex") and Color.html_is_valid(str(d["hex"])):
+			if d.has("hex") and d["hex"] != null and Color.html_is_valid(str(d["hex"])):
 				return Color.html(str(d["hex"]))
 		if v is Array:
 			var arr: Array = v
 			if arr.size() >= 4:
-				return Color(float(arr[0]), float(arr[1]), float(arr[2]), float(arr[3]))
+				return Color(
+					safe_float(arr[0], fallback.r),
+					safe_float(arr[1], fallback.g),
+					safe_float(arr[2], fallback.b),
+					safe_float(arr[3], fallback.a)
+				)
 			elif arr.size() == 3:
-				return Color(float(arr[0]), float(arr[1]), float(arr[2]), 1.0)
+				return Color(
+					safe_float(arr[0], fallback.r),
+					safe_float(arr[1], fallback.g),
+					safe_float(arr[2], fallback.b),
+					1.0
+				)
 		return fallback
 
 	static func vec2_to_dict(v: Vector2) -> Dictionary:
@@ -118,14 +181,14 @@ class _Ser:
 
 	static func vec2_from_variant(v: Variant, fallback: Vector2 = Vector2.ZERO) -> Vector2:
 		if v is Vector2:
-			return v
+			return Vector2(safe_float(v.x, fallback.x), safe_float(v.y, fallback.y))
 		if v is Dictionary:
 			var d: Dictionary = v
-			return Vector2(float(d.get("x", fallback.x)), float(d.get("y", fallback.y)))
+			return Vector2(safe_float(d.get("x"), fallback.x), safe_float(d.get("y"), fallback.y))
 		if v is Array:
 			var arr: Array = v
 			if arr.size() >= 2:
-				return Vector2(float(arr[0]), float(arr[1]))
+				return Vector2(safe_float(arr[0], fallback.x), safe_float(arr[1], fallback.y))
 		return fallback
 
 	static func poly_to_array(poly: PackedVector2Array) -> Array:
@@ -136,22 +199,33 @@ class _Ser:
 
 	static func poly_from_variant(v: Variant) -> PackedVector2Array:
 		if v is PackedVector2Array:
-			return v.duplicate()
+			var clean := PackedVector2Array()
+			for pt in v:
+				clean.append(vec2_from_variant(pt))
+			return clean
 		var out := PackedVector2Array()
 		if v is Array:
 			for item in v:
-				out.append(vec2_from_variant(item))
+				if item is Vector2 or item is Dictionary or (item is Array and (item as Array).size() >= 2):
+					out.append(vec2_from_variant(item))
 		return out
 
 	static func parse_slot_enum(v: Variant, enum_dict: Dictionary, fallback: int = 0) -> int:
-		if v is int or v is float:
-			return int(v)
+		var valid_values: Array = enum_dict.values()
+		if v is int:
+			return v if valid_values.has(v) else fallback
+		if v is float:
+			if not is_finite(v):
+				return fallback
+			var cand: int = int(v)
+			return cand if valid_values.has(cand) else fallback
 		if v is String:
 			var key: String = v.strip_edges().to_upper()
 			if enum_dict.has(key):
 				return int(enum_dict[key])
 			if key.is_valid_int():
-				return key.to_int()
+				var cand: int = key.to_int()
+				return cand if valid_values.has(cand) else fallback
 		return fallback
 
 
@@ -234,27 +308,28 @@ class PartPieceSpec extends RefCounted:
 
 	static func from_dict(d: Dictionary) -> PartPieceSpec:
 		var spec := PartPieceSpec.new()
-		spec.part_id = str(d.get("part_id", "unnamed_part"))
+		var raw_id: String = _Ser.safe_str(d.get("part_id"), "unnamed_part")
+		spec.part_id = raw_id if not raw_id.is_empty() else "unnamed_part"
 		spec.slot = _Ser.parse_slot_enum(d.get("slot", PartSlot.HEAD), PartSlot, PartSlot.HEAD)
 		spec.backend = _Ser.parse_slot_enum(
 			d.get("backend", AssetRenderBackend.PROCEDURAL_VECTOR),
 			AssetRenderBackend,
 			AssetRenderBackend.PROCEDURAL_VECTOR
 		)
-		spec.texture_path = str(d.get("texture_path", ""))
+		spec.texture_path = _Ser.safe_str(d.get("texture_path"), "")
 		if d.get("texture") is Texture2D:
 			spec.texture = d.get("texture")
 		elif not spec.texture_path.is_empty() and ResourceLoader.exists(spec.texture_path):
 			var loaded_tex = ResourceLoader.load(spec.texture_path)
 			if loaded_tex is Texture2D:
 				spec.texture = loaded_tex
-		spec.scene_path = str(d.get("scene_path", ""))
+		spec.scene_path = _Ser.safe_str(d.get("scene_path"), "")
 		spec.polygon_points = _Ser.poly_from_variant(d.get("polygon_points", []))
-		spec.line_width = float(d.get("line_width", 2.5))
+		spec.line_width = _Ser.safe_float(d.get("line_width"), 2.5)
 		spec.primary_color = _Ser.color_from_variant(d.get("primary_color"), Color.WHITE)
 		spec.secondary_color = _Ser.color_from_variant(d.get("secondary_color"), Color.CYAN)
 		spec.offset = _Ser.vec2_from_variant(d.get("offset"), Vector2.ZERO)
-		spec.rotation_offset = float(d.get("rotation_offset", 0.0))
+		spec.rotation_offset = _Ser.safe_float(d.get("rotation_offset"), 0.0)
 		spec.scale = _Ser.vec2_from_variant(d.get("scale"), Vector2.ONE)
 		if d.has("region_rect"):
 			var rr = d.get("region_rect")
@@ -262,12 +337,12 @@ class PartPieceSpec extends RefCounted:
 				spec.region_rect = rr
 			elif rr is Dictionary:
 				spec.region_rect = Rect2(
-					float(rr.get("x", 0.0)),
-					float(rr.get("y", 0.0)),
-					float(rr.get("w", 0.0)),
-					float(rr.get("h", 0.0))
+					_Ser.safe_float(rr.get("x"), 0.0),
+					_Ser.safe_float(rr.get("y"), 0.0),
+					_Ser.safe_float(rr.get("w"), 0.0),
+					_Ser.safe_float(rr.get("h"), 0.0)
 				)
-		spec.z_offset = int(d.get("z_offset", 0))
+		spec.z_offset = _Ser.safe_int(d.get("z_offset"), 0)
 		if d.get("metadata") is Dictionary:
 			spec.metadata = (d.get("metadata") as Dictionary).duplicate(true)
 		return spec
@@ -345,8 +420,12 @@ class WeaponPieceSpec extends RefCounted:
 
 	static func from_dict(d: Dictionary) -> WeaponPieceSpec:
 		var spec := WeaponPieceSpec.new()
-		spec.piece_id = str(d.get("piece_id", "unnamed_weapon_piece"))
-		var raw_slot = d.get("piece_slot", d.get("slot", WeaponPieceSlot.BLADE_EDGE))
+		spec.piece_id = _Ser.safe_str(d.get("piece_id"), "unnamed_weapon_piece")
+		if spec.piece_id.is_empty():
+			spec.piece_id = "unnamed_weapon_piece"
+		var raw_slot = d.get("piece_slot")
+		if raw_slot == null:
+			raw_slot = d.get("slot", WeaponPieceSlot.BLADE_EDGE)
 		spec.piece_slot = _Ser.parse_slot_enum(
 			raw_slot, WeaponPieceSlot, WeaponPieceSlot.BLADE_EDGE
 		)
@@ -355,7 +434,7 @@ class WeaponPieceSpec extends RefCounted:
 			AssetRenderBackend,
 			AssetRenderBackend.PROCEDURAL_VECTOR
 		)
-		spec.texture_path = str(d.get("texture_path", ""))
+		spec.texture_path = _Ser.safe_str(d.get("texture_path"), "")
 		if d.get("texture") is Texture2D:
 			spec.texture = d.get("texture")
 		elif not spec.texture_path.is_empty() and ResourceLoader.exists(spec.texture_path):
@@ -364,14 +443,14 @@ class WeaponPieceSpec extends RefCounted:
 				spec.texture = loaded_tex
 		spec.polygon_points = _Ser.poly_from_variant(d.get("polygon_points", []))
 		spec.local_offset = _Ser.vec2_from_variant(d.get("local_offset"), Vector2.ZERO)
-		spec.length = float(d.get("length", 12.0))
-		spec.thickness = float(d.get("thickness", 2.5))
+		spec.length = _Ser.safe_float(d.get("length"), 12.0)
+		spec.thickness = _Ser.safe_float(d.get("thickness"), 2.5)
 		spec.color = _Ser.color_from_variant(d.get("color"), Color.CYAN)
 		spec.glow_color = _Ser.color_from_variant(
 			d.get("glow_color"), Color(0.6, 1.0, 1.0, 0.8)
 		)
-		spec.rotates_with_gear = bool(d.get("rotates_with_gear", false))
-		spec.key_tooth_length = float(d.get("key_tooth_length", 0.0))
+		spec.rotates_with_gear = _Ser.safe_bool(d.get("rotates_with_gear"), false)
+		spec.key_tooth_length = _Ser.safe_float(d.get("key_tooth_length"), 0.0)
 		return spec
 
 
@@ -415,20 +494,33 @@ class WeaponAssemblySpec extends RefCounted:
 		anim_time: float = 0.0
 	) -> Array[Dictionary]:
 		var results: Array[Dictionary] = []
-		var face_sign: float = 1.0 if facing >= 0.0 else -1.0
-		var axis_vec: Vector2 = tip_pos - hilt_pos
-		var total_len: float = axis_vec.length()
+		var safe_facing: float = facing if is_finite(facing) else 1.0
+		var face_sign: float = 1.0 if safe_facing >= 0.0 else -1.0
+		var safe_hilt: Vector2 = hilt_pos if (is_finite(hilt_pos.x) and is_finite(hilt_pos.y)) else Vector2.ZERO
+		var safe_tip: Vector2 = (
+			tip_pos
+			if (is_finite(tip_pos.x) and is_finite(tip_pos.y))
+			else safe_hilt + Vector2(face_sign * 36.0, 0.0)
+		)
+		var axis_vec: Vector2 = safe_tip - safe_hilt
+		var total_len: float = axis_vec.length() if (is_finite(axis_vec.x) and is_finite(axis_vec.y)) else 0.0
 		var dir: Vector2 = (
 			axis_vec / total_len
-			if total_len > 0.001
+			if (is_finite(total_len) and total_len > 0.001)
 			else Vector2(face_sign, 0.0)
 		)
-		if total_len <= 0.001:
+		if not is_finite(total_len) or total_len <= 0.001:
 			total_len = 36.0
+		else:
+			total_len = clampf(total_len, 0.001, 5000.0)
 		var base_angle: float = dir.angle()
+		if not is_finite(base_angle):
+			base_angle = 0.0
 		# Perpendicular vector oriented consistently with facing for key teeth / scopes
 		var perp: Vector2 = Vector2(-dir.y, dir.x) * face_sign
-		var clamped_align: float = clampf(gear_alignment, 0.0, 1.0)
+		var safe_gear_align: float = gear_alignment if is_finite(gear_alignment) else 0.0
+		var clamped_align: float = clampf(safe_gear_align, 0.0, 1.0)
+		var safe_anim_time: float = fmod(anim_time, 10000.0) if is_finite(anim_time) else 0.0
 		var is_shift_staff: bool = (weapon_class == "shift_staff_cane")
 
 		var sorted_slots: Array = pieces.keys()
@@ -485,11 +577,16 @@ class WeaponAssemblySpec extends RefCounted:
 					t_start = 0.0
 					t_end = 0.5
 
-			var local_world_offset: Vector2 = (
-				dir * piece.local_offset.x + perp * piece.local_offset.y + perp * lateral_dist
+			var safe_offset: Vector2 = (
+				piece.local_offset
+				if (is_finite(piece.local_offset.x) and is_finite(piece.local_offset.y))
+				else Vector2.ZERO
 			)
-			var start_pos: Vector2 = hilt_pos + dir * (total_len * t_start) + local_world_offset
-			var end_pos: Vector2 = hilt_pos + dir * (total_len * t_end) + local_world_offset
+			var local_world_offset: Vector2 = (
+				dir * safe_offset.x + perp * safe_offset.y + perp * lateral_dist
+			)
+			var start_pos: Vector2 = safe_hilt + dir * (total_len * t_start) + local_world_offset
+			var end_pos: Vector2 = safe_hilt + dir * (total_len * t_end) + local_world_offset
 			var center_pos: Vector2 = (start_pos + end_pos) * 0.5
 
 			# Gearwork & Key-Teeth rotational alignment physics for Shift Staff
@@ -502,22 +599,24 @@ class WeaponAssemblySpec extends RefCounted:
 				# At gear_alignment == 1.0, phase offset collapses to 0.0 (locked into Chronos Key alignment).
 				var unaligned_factor: float = 1.0 - clamped_align
 				var slot_phase_seed: float = 0.85 if slot == WeaponPieceSlot.GEARWORK_CORE else -1.15
-				gear_phase_offset = unaligned_factor * (slot_phase_seed + anim_time * 3.5)
+				gear_phase_offset = unaligned_factor * (slot_phase_seed + safe_anim_time * 3.5)
 				tooth_extension_ratio = lerpf(0.25, 1.0, clamped_align)
 
 			var piece_rotation: float = base_angle + gear_phase_offset
-			var effective_tooth_len: float = piece.key_tooth_length * tooth_extension_ratio
+			var safe_tooth_len: float = piece.key_tooth_length if is_finite(piece.key_tooth_length) else 0.0
+			var effective_tooth_len: float = safe_tooth_len * tooth_extension_ratio
 			var tooth_dir: Vector2 = perp.rotated(gear_phase_offset)
 			var tooth_tip: Vector2 = center_pos + tooth_dir * effective_tooth_len
 
-			if slot == WeaponPieceSlot.KEY_TEETH and piece.key_tooth_length > 0.0:
+			if slot == WeaponPieceSlot.KEY_TEETH and safe_tooth_len > 0.0:
 				end_pos = tooth_tip
 
 			var world_poly := PackedVector2Array()
 			if piece.polygon_points.size() > 0:
 				for pt in piece.polygon_points:
-					var rotated_pt: Vector2 = pt.rotated(piece_rotation)
-					world_poly.append(center_pos + rotated_pt)
+					if is_finite(pt.x) and is_finite(pt.y):
+						var rotated_pt: Vector2 = pt.rotated(piece_rotation)
+						world_poly.append(center_pos + rotated_pt)
 
 			results.append({
 				"piece_id": piece.piece_id,
@@ -538,8 +637,8 @@ class WeaponAssemblySpec extends RefCounted:
 				"tooth_extension_ratio": tooth_extension_ratio,
 				"key_tooth_length": effective_tooth_len,
 				"tooth_tip": tooth_tip,
-				"length": piece.length,
-				"thickness": piece.thickness,
+				"length": piece.length if is_finite(piece.length) else 12.0,
+				"thickness": piece.thickness if is_finite(piece.thickness) else 2.5,
 				"color": piece.color,
 				"glow_color": piece.glow_color,
 				"texture": piece.texture,
@@ -562,10 +661,13 @@ class WeaponAssemblySpec extends RefCounted:
 		}
 
 	static func from_dict(d: Dictionary) -> WeaponAssemblySpec:
-		var assembly := WeaponAssemblySpec.new(
-			str(d.get("weapon_id", "default_weapon")),
-			str(d.get("weapon_class", "shift_staff_cane"))
-		)
+		var wid: String = _Ser.safe_str(d.get("weapon_id"), "default_weapon")
+		if wid.is_empty():
+			wid = "default_weapon"
+		var wclass: String = _Ser.safe_str(d.get("weapon_class"), "shift_staff_cane")
+		if wclass.is_empty():
+			wclass = "shift_staff_cane"
+		var assembly := WeaponAssemblySpec.new(wid, wclass)
 		var raw_pieces = d.get("pieces", {})
 		if raw_pieces is Dictionary:
 			for k in raw_pieces.keys():
@@ -681,9 +783,15 @@ class CharacterLoadout extends RefCounted:
 		}
 
 	static func from_dict(d: Dictionary) -> CharacterLoadout:
+		var lid: String = _Ser.safe_str(d.get("loadout_id"), "custom_loadout")
+		if lid.is_empty():
+			lid = "custom_loadout"
+		var dname: String = _Ser.safe_str(d.get("display_name"), "Custom Loadout")
+		if dname.is_empty():
+			dname = "Custom Loadout"
 		var loadout := CharacterLoadout.new(
-			str(d.get("loadout_id", "custom_loadout")),
-			str(d.get("display_name", "Custom Loadout")),
+			lid,
+			dname,
 			_Ser.color_from_variant(d.get("body_color"), Color.WHITE),
 			_Ser.color_from_variant(d.get("accent_color"), Color.CYAN)
 		)
@@ -749,12 +857,21 @@ class StickmanPoseSolver extends RefCounted:
 		is_enemy: bool,
 		stance: String = "normal"
 	) -> StickmanPose:
-		var face_dir: float = 1.0 if facing >= 0.0 else -1.0
-		var speed: float = absf(velocity.x)
+		var safe_pos: Vector2 = pos if (is_finite(pos.x) and is_finite(pos.y)) else Vector2.ZERO
+		var safe_facing: float = facing if is_finite(facing) else 1.0
+		var face_dir: float = 1.0 if safe_facing >= 0.0 else -1.0
+		var safe_vel: Vector2 = (
+			velocity if (is_finite(velocity.x) and is_finite(velocity.y)) else Vector2.ZERO
+		)
+		var safe_anim_time: float = fmod(anim_time, 10000.0) if is_finite(anim_time) else 0.0
+		var safe_attack_progress: float = (
+			clampf(attack_progress, 0.0, 1.0) if is_finite(attack_progress) else 0.0
+		)
+		var speed: float = absf(safe_vel.x)
 		var is_running: bool = is_grounded and speed > 20.0
 		var is_jumping: bool = not is_grounded
 
-		var base_pelvis: Vector2 = pos + Vector2(0.0, 16.0)
+		var base_pelvis: Vector2 = safe_pos + Vector2(0.0, 16.0)
 		var pelvis: Vector2 = base_pelvis
 		var neck: Vector2 = pelvis + Vector2(face_dir * 3.0, 24.0)
 
@@ -771,7 +888,7 @@ class StickmanPoseSolver extends RefCounted:
 		elif stance == "wall_slide":
 			neck = pelvis + Vector2(-face_dir * 2.0, 24.0)
 		elif is_running:
-			pelvis.y += absf(sin(anim_time * 14.0)) * 3.0
+			pelvis.y += absf(sin(safe_anim_time * 14.0)) * 3.0
 			neck.x += face_dir * 6.0
 		elif is_jumping:
 			neck.x += face_dir * 4.0
@@ -801,7 +918,7 @@ class StickmanPoseSolver extends RefCounted:
 			right_foot = right_knee + Vector2(face_dir * 6.0, -12.0)
 		elif is_running:
 			# Running stride
-			var phase: float = anim_time * clampf(speed * 0.04, 8.0, 22.0)
+			var phase: float = safe_anim_time * clampf(speed * 0.04, 8.0, 22.0)
 			var l_angle: float = sin(phase)
 			var r_angle: float = sin(phase + PI)
 
@@ -812,7 +929,7 @@ class StickmanPoseSolver extends RefCounted:
 			right_foot = right_knee + Vector2(r_angle * 10.0, -14.0)
 		else:
 			# Idle breathing stance
-			var breath: float = sin(anim_time * 3.0) * 1.5
+			var breath: float = sin(safe_anim_time * 3.0) * 1.5
 			left_knee = left_hip + Vector2(-face_dir * 4.0, -13.0 + breath)
 			left_foot = left_knee + Vector2(0.0, -13.0)
 			right_knee = right_hip + Vector2(face_dir * 6.0, -12.0 + breath)
@@ -848,7 +965,7 @@ class StickmanPoseSolver extends RefCounted:
 			sword_tip = right_hand + guard_dir * 38.0
 		elif stance == "heavy_slash":
 			# Wide high-gear heavy cleave arc
-			var sweep: float = clampf(1.0 - attack_progress, 0.0, 1.0)
+			var sweep: float = clampf(1.0 - safe_attack_progress, 0.0, 1.0)
 			var swing_angle: float = 1.35 - sweep * 2.6
 			var hand_dir := Vector2(face_dir * cos(swing_angle), sin(swing_angle)).normalized()
 			right_hand = right_shoulder + hand_dir * 24.0
@@ -877,7 +994,7 @@ class StickmanPoseSolver extends RefCounted:
 			sword_tip = right_hand + key_dir * 38.0
 		elif is_attacking:
 			# Forward slash swing pose (exact match to bevy-game-test/src/render.rs)
-			var sweep: float = clampf(1.0 - attack_progress, 0.0, 1.0)
+			var sweep: float = clampf(1.0 - safe_attack_progress, 0.0, 1.0)
 			var swing_angle: float = -0.8 + sweep * 2.2
 			var hand_dir := Vector2(face_dir * cos(swing_angle), sin(swing_angle))
 
@@ -891,7 +1008,7 @@ class StickmanPoseSolver extends RefCounted:
 			sword_tip = right_hand + blade_dir * 38.0
 		elif is_running:
 			# Pumping arms (exact match to bevy-game-test/src/render.rs)
-			var arm_phase: float = anim_time * clampf(speed * 0.04, 8.0, 22.0)
+			var arm_phase: float = safe_anim_time * clampf(speed * 0.04, 8.0, 22.0)
 			var l_swing: float = sin(arm_phase + PI)
 			var r_swing: float = sin(arm_phase)
 
@@ -917,15 +1034,16 @@ class StickmanPoseSolver extends RefCounted:
 			sword_tip = right_hand + sword_dir * 34.0
 
 		# Scarf / Headband ribbon (exact match to bevy-game-test/src/render.rs)
+		var clamped_vy: float = clampf(safe_vel.y, -2000.0, 2000.0)
 		var head_back: Vector2 = head_center + Vector2(-face_dir * head_radius, 0.0)
 		var scarf_0: Vector2 = head_back + Vector2(
-			-face_dir * 8.0, (sin(anim_time * 8.0) * 3.0) - velocity.y * 0.02
+			-face_dir * 8.0, (sin(safe_anim_time * 8.0) * 3.0) - clamped_vy * 0.02
 		)
 		var scarf_1: Vector2 = scarf_0 + Vector2(
-			-face_dir * 10.0, (sin(anim_time * 8.0 + 1.2) * 4.0) - velocity.y * 0.03
+			-face_dir * 10.0, (sin(safe_anim_time * 8.0 + 1.2) * 4.0) - clamped_vy * 0.03
 		)
 		var scarf_2: Vector2 = scarf_1 + Vector2(
-			-face_dir * 12.0, (sin(anim_time * 8.0 + 2.4) * 5.0) - velocity.y * 0.04
+			-face_dir * 12.0, (sin(safe_anim_time * 8.0 + 2.4) * 5.0) - clamped_vy * 0.04
 		)
 
 		var pose := StickmanPose.new()
@@ -957,7 +1075,8 @@ class StickmanPoseSolver extends RefCounted:
 		slot: int,
 		facing: float = 1.0
 	) -> Dictionary:
-		var face_dir: float = 1.0 if facing >= 0.0 else -1.0
+		var safe_facing: float = facing if is_finite(facing) else 1.0
+		var face_dir: float = 1.0 if safe_facing >= 0.0 else -1.0
 		var start_pt: Vector2 = Vector2.ZERO
 		var end_pt: Vector2 = Vector2.ZERO
 		var center_pt: Vector2 = Vector2.ZERO
@@ -1008,9 +1127,12 @@ class StickmanPoseSolver extends RefCounted:
 				start_pt = pose.left_elbow
 				end_pt = pose.left_hand
 			PartSlot.HAND_L:
-				var l_arm_dir: Vector2 = (pose.left_hand - pose.left_elbow).normalized()
-				if l_arm_dir.length_squared() < 0.001:
-					l_arm_dir = Vector2(face_dir, 0.0)
+				var l_seg: Vector2 = pose.left_hand - pose.left_elbow
+				var l_arm_dir: Vector2 = (
+					l_seg.normalized()
+					if (is_finite(l_seg.x) and is_finite(l_seg.y) and l_seg.length_squared() > 0.001)
+					else Vector2(face_dir, 0.0)
+				)
 				start_pt = pose.left_hand
 				end_pt = pose.left_hand + l_arm_dir * 4.5
 				center_pt = pose.left_hand
@@ -1022,9 +1144,12 @@ class StickmanPoseSolver extends RefCounted:
 				start_pt = pose.right_elbow
 				end_pt = pose.right_hand
 			PartSlot.HAND_R:
-				var r_arm_dir: Vector2 = (pose.right_hand - pose.right_elbow).normalized()
-				if r_arm_dir.length_squared() < 0.001:
-					r_arm_dir = Vector2(face_dir, 0.0)
+				var r_seg: Vector2 = pose.right_hand - pose.right_elbow
+				var r_arm_dir: Vector2 = (
+					r_seg.normalized()
+					if (is_finite(r_seg.x) and is_finite(r_seg.y) and r_seg.length_squared() > 0.001)
+					else Vector2(face_dir, 0.0)
+				)
 				start_pt = pose.right_hand
 				end_pt = pose.right_hand + r_arm_dir * 4.5
 				center_pt = pose.right_hand
@@ -1058,11 +1183,18 @@ class StickmanPoseSolver extends RefCounted:
 				start_pt = pose.pelvis
 				end_pt = pose.neck
 
-		if not custom_center:
+		if not (is_finite(start_pt.x) and is_finite(start_pt.y)):
+			start_pt = Vector2.ZERO
+		if not (is_finite(end_pt.x) and is_finite(end_pt.y)):
+			end_pt = start_pt + Vector2(face_dir * 4.0, 0.0)
+		if not custom_center or not (is_finite(center_pt.x) and is_finite(center_pt.y)):
 			center_pt = (start_pt + end_pt) * 0.5
 		var seg: Vector2 = end_pt - start_pt
-		var length: float = override_len if override_len > 0.0 else maxf(seg.length(), 0.001)
-		var angle: float = seg.angle() if seg.length_squared() > 0.0001 else 0.0
+		var seg_len: float = seg.length() if (is_finite(seg.x) and is_finite(seg.y)) else 0.0
+		var length: float = override_len if (is_finite(override_len) and override_len > 0.0) else maxf(seg_len, 0.001)
+		var angle: float = seg.angle() if (is_finite(seg_len) and seg_len > 0.01) else 0.0
+		if not is_finite(angle):
+			angle = 0.0
 
 		return {
 			"start": start_pt,
@@ -1161,9 +1293,13 @@ class ModularAssetRegistry extends RefCounted:
 		return JSON.stringify(manifest, "\t")
 
 	func load_manifest_json(json_string: String) -> bool:
-		if json_string.strip_edges().is_empty():
+		var stripped: String = json_string.strip_edges()
+		if stripped.is_empty() or not stripped.begins_with("{") or not stripped.ends_with("}"):
 			return false
-		var parsed = JSON.parse_string(json_string)
+		var json := JSON.new()
+		if json.parse(stripped) != OK:
+			return false
+		var parsed = json.data
 		if not (parsed is Dictionary):
 			return false
 		var manifest: Dictionary = parsed
@@ -1174,17 +1310,19 @@ class ModularAssetRegistry extends RefCounted:
 			for item in raw_parts:
 				if item is Dictionary:
 					var spec := PartPieceSpec.from_dict(item)
-					register_part(spec)
-					if item.has("target_loadout"):
-						var target_id: String = str(item["target_loadout"])
-						if loadouts.has(target_id):
-							(loadouts[target_id] as CharacterLoadout).equip_part(spec.duplicate_spec())
+					if spec != null:
+						register_part(spec)
+						if item.has("target_loadout"):
+							var target_id: String = _Ser.safe_str(item["target_loadout"], "")
+							if not target_id.is_empty() and loadouts.has(target_id):
+								(loadouts[target_id] as CharacterLoadout).equip_part(spec.duplicate_spec())
 		elif raw_parts is Dictionary:
 			for k in raw_parts.keys():
 				var item = raw_parts[k]
 				if item is Dictionary:
 					var spec := PartPieceSpec.from_dict(item)
-					register_part(spec)
+					if spec != null:
+						register_part(spec)
 
 		# 2. Load standalone weapon_pieces catalog
 		var raw_wps = manifest.get("weapon_pieces", [])
@@ -1192,17 +1330,19 @@ class ModularAssetRegistry extends RefCounted:
 			for item in raw_wps:
 				if item is Dictionary:
 					var wp_spec := WeaponPieceSpec.from_dict(item)
-					register_weapon_piece(wp_spec)
-					if item.has("target_loadout"):
-						var target_id: String = str(item["target_loadout"])
-						if loadouts.has(target_id):
-							(loadouts[target_id] as CharacterLoadout).equip_weapon_piece(wp_spec.duplicate_spec())
+					if wp_spec != null:
+						register_weapon_piece(wp_spec)
+						if item.has("target_loadout"):
+							var target_id: String = _Ser.safe_str(item["target_loadout"], "")
+							if not target_id.is_empty() and loadouts.has(target_id):
+								(loadouts[target_id] as CharacterLoadout).equip_weapon_piece(wp_spec.duplicate_spec())
 		elif raw_wps is Dictionary:
 			for k in raw_wps.keys():
 				var item = raw_wps[k]
 				if item is Dictionary:
 					var wp_spec := WeaponPieceSpec.from_dict(item)
-					register_weapon_piece(wp_spec)
+					if wp_spec != null:
+						register_weapon_piece(wp_spec)
 
 		# 3. Load full loadouts
 		var raw_loadouts = manifest.get("loadouts", {})
@@ -1211,12 +1351,14 @@ class ModularAssetRegistry extends RefCounted:
 				var lo_dict = raw_loadouts[lo_id]
 				if lo_dict is Dictionary:
 					var loadout := CharacterLoadout.from_dict(lo_dict)
-					register_loadout(loadout)
+					if loadout != null:
+						register_loadout(loadout)
 		elif raw_loadouts is Array:
 			for lo_dict in raw_loadouts:
 				if lo_dict is Dictionary:
 					var loadout := CharacterLoadout.from_dict(lo_dict)
-					register_loadout(loadout)
+					if loadout != null:
+						register_loadout(loadout)
 
 		return true
 

@@ -5,15 +5,38 @@ extends RefCounted
 ## Ported from bevy-game-test/src/combat.rs + OUT OF TIME spec.
 
 
+static func _safe_vec2(v: Vector2, fallback: Vector2 = Vector2.ZERO) -> Vector2:
+	if is_finite(v.x) and is_finite(v.y):
+		return v
+	return Vector2(
+		v.x if is_finite(v.x) else fallback.x,
+		v.y if is_finite(v.y) else fallback.y
+	)
+
+
+static func _safe_dir(v: Vector2, fallback: Vector2 = Vector2.RIGHT) -> Vector2:
+	if is_finite(v.x) and is_finite(v.y) and v.length_squared() > 1e-6:
+		return v.normalized()
+	if is_finite(fallback.x) and is_finite(fallback.y) and fallback.length_squared() > 1e-6:
+		return fallback.normalized()
+	return Vector2.RIGHT
+
+
 ## Pure mathematical calculation: minimum squared distance from point `p` to line segment `[a, b]`.
 static func point_to_segment_distance_sq(p: Vector2, a: Vector2, b: Vector2) -> float:
-	var ab: Vector2 = b - a
+	var sp: Vector2 = _safe_vec2(p, Vector2.ZERO)
+	var sa: Vector2 = _safe_vec2(a, Vector2.ZERO)
+	var sb: Vector2 = _safe_vec2(b, sa)
+	var ab: Vector2 = sb - sa
 	var len_sq: float = ab.length_squared()
 	if len_sq < 1e-6 or not is_finite(len_sq):
-		return (p - a).length_squared()
-	var t: float = clampf((p - a).dot(ab) / len_sq, 0.0, 1.0)
-	var projection: Vector2 = a + ab * t
-	return (p - projection).length_squared()
+		var d0: float = (sp - sa).length_squared()
+		return d0 if is_finite(d0) else 0.0
+	var dot_val: float = (sp - sa).dot(ab)
+	var t: float = clampf(dot_val / len_sq, 0.0, 1.0) if is_finite(dot_val) else 0.0
+	var projection: Vector2 = sa + ab * t
+	var d_sq: float = (sp - projection).length_squared()
+	return d_sq if is_finite(d_sq) else 0.0
 
 
 ## Pure test: checks if line segment `[a, b]` intersects a circle of given `center` and `radius`.
@@ -32,24 +55,26 @@ static func katana_arc_intersects(
 	arc_radians: float,
 	target_radius: float
 ) -> bool:
-	var to_target: Vector2 = target - origin
+	var s_origin: Vector2 = _safe_vec2(origin, Vector2.ZERO)
+	var s_target: Vector2 = _safe_vec2(target, Vector2.ZERO)
+	var s_range: float = maxf(0.0, slash_range) if is_finite(slash_range) else 80.0
+	var s_arc: float = maxf(0.0, arc_radians) if is_finite(arc_radians) else PI * 0.75
+	var s_rad: float = maxf(0.0, target_radius) if is_finite(target_radius) else 0.0
+
+	var to_target: Vector2 = s_target - s_origin
 	var dist: float = to_target.length()
-	if dist > slash_range + target_radius:
+	if not is_finite(dist) or dist > s_range + s_rad:
 		return false
 	# If very close to player, hit unconditionally
-	if dist <= target_radius * 1.5:
+	if dist <= maxf(s_rad * 1.5, 1e-4):
 		return true
 
 	var dir: Vector2 = to_target / dist
-	var primary_dir: Vector2
-	if aim_dir.length_squared() > 0.01:
-		primary_dir = aim_dir.normalized()
-	else:
-		var f: float = 1.0 if facing >= 0.0 else -1.0
-		primary_dir = Vector2(f, 0.0)
+	var f: float = 1.0 if (not is_finite(facing) or facing >= 0.0) else -1.0
+	var primary_dir: Vector2 = _safe_dir(aim_dir, Vector2(f, 0.0))
 
 	var angle_diff: float = acos(clampf(dir.dot(primary_dir), -1.0, 1.0))
-	return angle_diff <= (arc_radians * 0.5) + (target_radius / maxf(dist, 1.0))
+	return angle_diff <= (s_arc * 0.5) + (s_rad / maxf(dist, 1.0))
 
 
 class ComboState extends RefCounted:
@@ -180,11 +205,11 @@ class BulletData extends RefCounted:
 		p_bounces: int = 0,
 		p_era: int = 1
 	) -> void:
-		position = p_pos
-		velocity = p_vel
-		radius = p_radius
-		damage = p_damage
-		lifetime = p_lifetime
+		position = CombatMath._safe_vec2(p_pos, Vector2.ZERO)
+		velocity = CombatMath._safe_vec2(p_vel, Vector2.ZERO)
+		radius = maxf(0.5, p_radius) if is_finite(p_radius) else 6.0
+		damage = maxf(0.0, p_damage) if is_finite(p_damage) else 20.0
+		lifetime = maxf(0.0, p_lifetime) if is_finite(p_lifetime) else 3.5
 		is_automatic = p_is_auto
 		bounces_remaining = p_bounces
 		era = p_era
@@ -197,8 +222,10 @@ class BulletData extends RefCounted:
 		floor_y: float = -260.0,
 		ceiling_y: float = 360.0
 	) -> bool:
+		position = CombatMath._safe_vec2(position, Vector2.ZERO)
+		velocity = CombatMath._safe_vec2(velocity, Vector2.ZERO)
 		var safe_dt: float = maxf(0.0, dt) if is_finite(dt) else 0.0
-		if lifetime <= 0.0 or damage <= 0.0:
+		if not is_finite(lifetime) or not is_finite(damage) or lifetime <= 0.0 or damage <= 0.0:
 			return false
 
 		lifetime -= safe_dt
@@ -241,20 +268,21 @@ class BulletData extends RefCounted:
 	## Deflects/parries the bullet towards `new_dir`, boosting speed & damage and preserving bounces.
 	func deflect(new_dir: Vector2, speed_mult: float = 1.5) -> void:
 		is_reflected = true
+		velocity = CombatMath._safe_vec2(velocity, Vector2.ZERO)
 		var current_speed: float = velocity.length()
 		if current_speed < 1.0 or not is_finite(current_speed):
 			current_speed = 540.0
 		var dir: Vector2
-		if new_dir.length_squared() > 1e-4:
+		if is_finite(new_dir.x) and is_finite(new_dir.y) and new_dir.length_squared() > 1e-4:
 			dir = new_dir.normalized()
-		elif velocity.length_squared() > 1e-4:
+		elif is_finite(velocity.x) and is_finite(velocity.y) and velocity.length_squared() > 1e-4:
 			dir = -velocity.normalized()
 		else:
 			dir = Vector2.RIGHT
 		var mult: float = maxf(0.1, speed_mult) if is_finite(speed_mult) else 1.5
 		velocity = dir * (current_speed * mult)
-		damage *= 1.5
-		lifetime = maxf(lifetime, 2.5)
+		damage = (damage if is_finite(damage) else 20.0) * 1.5
+		lifetime = maxf(lifetime if is_finite(lifetime) else 2.5, 2.5)
 		if bounces_remaining > 0:
 			bounces_remaining = maxi(bounces_remaining, 2)
 
@@ -441,18 +469,28 @@ static func perform_katana_slash(
 		"hit_enemies": 0,
 		"hit_bullets": 0,
 	}
-	if player == null or player.slash_cooldown > 0.0:
+	if player == null:
+		return result
+	if not is_finite(player.slash_cooldown):
+		player.slash_cooldown = 0.0
+	if player.slash_cooldown > 0.0:
 		return result
 	if chrono != null and chrono.is_hitstop_active():
 		return result
 
+	player.position = _safe_vec2(player.position, Vector2(0.0, -200.0))
+	player.facing = 1.0 if (not is_finite(player.facing) or player.facing >= 0.0) else -1.0
 	player.slash_cooldown = 0.22
 	var origin: Vector2 = player.position + Vector2(0.0, 16.0)
 	var aim_dir: Vector2
-	if cursor_world_pos is Vector2 and (cursor_world_pos - origin).length_squared() > 1e-4:
-		aim_dir = (cursor_world_pos - origin).normalized()
+	if cursor_world_pos is Vector2:
+		var cw: Vector2 = cursor_world_pos
+		if is_finite(cw.x) and is_finite(cw.y) and (cw - origin).length_squared() > 1e-4:
+			aim_dir = (cw - origin).normalized()
+		else:
+			aim_dir = Vector2(player.facing, 0.0)
 	else:
-		aim_dir = Vector2(1.0 if player.facing >= 0.0 else -1.0, 0.0)
+		aim_dir = Vector2(player.facing, 0.0)
 
 	var slash_range: float = 80.0
 	var arc_span: float = PI * 0.75
@@ -462,7 +500,7 @@ static func perform_katana_slash(
 		var enemy = enemies_by_id[eid]
 		if enemy == null:
 			continue
-		var enemy_center: Vector2 = enemy.position + Vector2(0.0, 16.0)
+		var enemy_center: Vector2 = _safe_vec2(enemy.position, Vector2.ZERO) + Vector2(0.0, 16.0)
 		if katana_arc_intersects(origin, player.facing, aim_dir, enemy_center, slash_range, arc_span, enemy.hitbox_radius):
 			hit_enemy_count += 1
 			var impulse: Vector2 = aim_dir * 320.0 + Vector2(0.0, 180.0)
@@ -512,6 +550,8 @@ static func perform_chrono_warp(
 	}
 	if player == null or energy == null:
 		return result
+	if not is_finite(player.warp_cooldown):
+		player.warp_cooldown = 0.0
 	if chrono != null and chrono.is_hitstop_active():
 		return result
 	if player.warp_cooldown > 0.0 or not energy.can_teleport():
@@ -521,18 +561,30 @@ static func perform_chrono_warp(
 	player.warp_cooldown = 0.20
 	player.invulnerability_timer = 0.25
 
+	player.position = _safe_vec2(player.position, Vector2(0.0, -200.0))
+	player.facing = 1.0 if (not is_finite(player.facing) or player.facing >= 0.0) else -1.0
 	var start_pos: Vector2 = player.position
-	var warp_vector: Vector2 = cursor_world_pos - start_pos
+	var safe_cursor: Vector2 = (
+		cursor_world_pos
+		if (is_finite(cursor_world_pos.x) and is_finite(cursor_world_pos.y))
+		else (start_pos + Vector2(player.facing * 200.0, 0.0))
+	)
+	var warp_vector: Vector2 = safe_cursor - start_pos
 	var max_range: float = 380.0
 	var dist: float = warp_vector.length()
-	var target_pos: Vector2 = (start_pos + (warp_vector / dist) * max_range) if dist > max_range else cursor_world_pos
+	var target_pos: Vector2 = (
+		(start_pos + (warp_vector / dist) * max_range)
+		if (is_finite(dist) and dist > max_range and dist > 1e-4)
+		else safe_cursor
+	)
+	target_pos = _safe_vec2(target_pos, start_pos)
 
 	var clamped_target := Vector2(
 		clampf(target_pos.x, -570.0, 570.0),
 		clampf(target_pos.y, -260.0, 320.0)
 	)
 	var delta_vec: Vector2 = clamped_target - start_pos
-	var slice_dir: Vector2 = delta_vec.normalized() if delta_vec.length_squared() > 1e-4 else Vector2(player.facing, 0.0)
+	var slice_dir: Vector2 = _safe_dir(delta_vec, Vector2(player.facing, 0.0))
 
 	player.position = clamped_target
 	player.velocity = Vector2.ZERO
@@ -546,7 +598,7 @@ static func perform_chrono_warp(
 		var enemy = enemies_by_id[eid]
 		if enemy == null:
 			continue
-		var enemy_center: Vector2 = enemy.position + Vector2(0.0, 16.0)
+		var enemy_center: Vector2 = _safe_vec2(enemy.position, Vector2.ZERO) + Vector2(0.0, 16.0)
 		if segment_intersects_circle(seg_start, seg_end, enemy_center, enemy.hitbox_radius + slice_radius):
 			hit_count += 1
 			var impulse: Vector2 = slice_dir * 450.0 + Vector2(0.0, 240.0)
@@ -569,14 +621,18 @@ static func apply_slam_shockwave(
 	enemies: Array,
 	launch_speed_y: float = 540.0
 ) -> int:
+	var s_origin: Vector2 = _safe_vec2(origin, Vector2.ZERO)
+	var s_rad: float = maxf(0.0, shockwave_radius) if is_finite(shockwave_radius) else 160.0
+	var s_launch_y: float = launch_speed_y if is_finite(launch_speed_y) else 540.0
 	var hit_count: int = 0
 	for enemy in enemies:
 		if enemy == null:
 			continue
-		var dist: float = (enemy.position - origin).length()
-		if dist <= shockwave_radius + enemy.hitbox_radius:
-			var push_x: float = signf(enemy.position.x - origin.x) * 140.0
-			EnemyAI.launch_enemy(enemy, Vector2(push_x, launch_speed_y), 0.75)
+		var e_pos: Vector2 = _safe_vec2(enemy.position, Vector2.ZERO)
+		var dist: float = (e_pos - s_origin).length()
+		if is_finite(dist) and dist <= s_rad + enemy.hitbox_radius:
+			var push_x: float = signf(e_pos.x - s_origin.x) * 140.0
+			EnemyAI.launch_enemy(enemy, Vector2(push_x, s_launch_y), 0.75)
 			hit_count += 1
 	return hit_count
 
