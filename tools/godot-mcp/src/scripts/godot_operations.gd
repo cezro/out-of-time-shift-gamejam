@@ -69,6 +69,10 @@ func _init():
             save_scene(params)
         "get_uid":
             get_uid(params)
+        "register_modular_part":
+            register_modular_part(params)
+        "register_weapon_piece":
+            register_weapon_piece(params)
         "resave_resources":
             resave_resources(params)
         _:
@@ -1184,3 +1188,139 @@ func save_scene(params):
             printerr("Failed to save scene: " + str(error))
     else:
         printerr("Failed to pack scene: " + str(result))
+
+
+# Helper to load or initialize the modular parts JSON manifest
+func _load_or_init_modular_manifest(manifest_path: String) -> Dictionary:
+    if FileAccess.file_exists(manifest_path):
+        var f = FileAccess.open(manifest_path, FileAccess.READ)
+        if f:
+            var raw_text = f.get_as_text()
+            f.close()
+            var parsed = JSON.parse_string(raw_text)
+            if parsed is Dictionary:
+                var d: Dictionary = parsed
+                if not d.has("version"):
+                    d["version"] = "1.0"
+                if not (d.get("parts") is Array):
+                    d["parts"] = []
+                if not (d.get("weapon_pieces") is Array):
+                    d["weapon_pieces"] = []
+                if not (d.get("loadouts") is Dictionary):
+                    d["loadouts"] = {}
+                return d
+    return {
+        "version": "1.0",
+        "parts": [],
+        "weapon_pieces": [],
+        "loadouts": {}
+    }
+
+# Helper to save the modular parts JSON manifest
+func _save_modular_manifest(manifest_path: String, manifest: Dictionary) -> bool:
+    var full_path = manifest_path
+    if not full_path.begins_with("res://") and not full_path.begins_with("user://"):
+        full_path = "res://" + full_path
+    var base_dir = full_path.get_base_dir()
+    var abs_dir = ProjectSettings.globalize_path(base_dir)
+    if not DirAccess.dir_exists_absolute(abs_dir):
+        DirAccess.make_dir_recursive_absolute(abs_dir)
+    var f = FileAccess.open(full_path, FileAccess.WRITE)
+    if not f:
+        log_error("Failed to open manifest for writing: " + full_path)
+        return false
+    f.store_string(JSON.stringify(manifest, "\t"))
+    f.close()
+    return true
+
+# Register or update a modular character part in res://assets/modular_parts_manifest.json
+func register_modular_part(params):
+    var manifest_path = "res://assets/modular_parts_manifest.json"
+    if params.has("manifest_path") and not str(params.manifest_path).is_empty():
+        manifest_path = str(params.manifest_path)
+        if not manifest_path.begins_with("res://") and not manifest_path.begins_with("user://"):
+            manifest_path = "res://" + manifest_path
+
+    var part_id = str(params.get("part_id", ""))
+    if part_id.is_empty():
+        log_error("register_modular_part requires a non-empty 'part_id'")
+        quit(1)
+
+    var manifest = _load_or_init_modular_manifest(manifest_path)
+    var part_entry = {
+        "part_id": part_id,
+        "slot": params.get("slot", 0),
+        "backend": params.get("backend", 0),
+        "texture_path": str(params.get("texture_path", "")),
+        "scene_path": str(params.get("scene_path", "")),
+        "polygon_points": params.get("polygon_points", []),
+        "line_width": float(params.get("line_width", 2.5)),
+        "primary_color": params.get("primary_color", "#ffffffff"),
+        "secondary_color": params.get("secondary_color", "#00ffffff"),
+        "offset": params.get("offset", {"x": 0.0, "y": 0.0}),
+        "rotation_offset": float(params.get("rotation_offset", 0.0)),
+        "scale": params.get("scale", {"x": 1.0, "y": 1.0}),
+        "z_offset": int(params.get("z_offset", 0)),
+        "metadata": params.get("metadata", {})
+    }
+    if params.has("target_loadout"):
+        part_entry["target_loadout"] = str(params.get("target_loadout"))
+
+    var parts_list: Array = manifest["parts"]
+    var replaced = false
+    for i in range(parts_list.size()):
+        if parts_list[i] is Dictionary and str(parts_list[i].get("part_id", "")) == part_id:
+            parts_list[i] = part_entry
+            replaced = true
+            break
+    if not replaced:
+        parts_list.append(part_entry)
+
+    if not _save_modular_manifest(manifest_path, manifest):
+        quit(1)
+    log_info("Registered modular part '" + part_id + "' in " + manifest_path)
+
+# Register or update a modular weapon piece in res://assets/modular_parts_manifest.json
+func register_weapon_piece(params):
+    var manifest_path = "res://assets/modular_parts_manifest.json"
+    if params.has("manifest_path") and not str(params.manifest_path).is_empty():
+        manifest_path = str(params.manifest_path)
+        if not manifest_path.begins_with("res://") and not manifest_path.begins_with("user://"):
+            manifest_path = "res://" + manifest_path
+
+    var piece_id = str(params.get("piece_id", ""))
+    if piece_id.is_empty():
+        log_error("register_weapon_piece requires a non-empty 'piece_id'")
+        quit(1)
+
+    var manifest = _load_or_init_modular_manifest(manifest_path)
+    var piece_entry = {
+        "piece_id": piece_id,
+        "piece_slot": params.get("piece_slot", params.get("slot", 6)),
+        "backend": params.get("backend", 0),
+        "texture_path": str(params.get("texture_path", "")),
+        "polygon_points": params.get("polygon_points", []),
+        "local_offset": params.get("local_offset", {"x": 0.0, "y": 0.0}),
+        "length": float(params.get("length", 12.0)),
+        "thickness": float(params.get("thickness", 2.5)),
+        "color": params.get("color", "#00ffffff"),
+        "glow_color": params.get("glow_color", "#99ffffcc"),
+        "rotates_with_gear": bool(params.get("rotates_with_gear", false)),
+        "key_tooth_length": float(params.get("key_tooth_length", 0.0))
+    }
+    if params.has("target_loadout"):
+        piece_entry["target_loadout"] = str(params.get("target_loadout"))
+
+    var wp_list: Array = manifest["weapon_pieces"]
+    var replaced = false
+    for i in range(wp_list.size()):
+        if wp_list[i] is Dictionary and str(wp_list[i].get("piece_id", "")) == piece_id:
+            wp_list[i] = piece_entry
+            replaced = true
+            break
+    if not replaced:
+        wp_list.append(piece_entry)
+
+    if not _save_modular_manifest(manifest_path, manifest):
+        quit(1)
+    log_info("Registered modular weapon piece '" + piece_id + "' in " + manifest_path)

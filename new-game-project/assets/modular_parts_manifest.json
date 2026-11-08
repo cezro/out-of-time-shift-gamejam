@@ -1,0 +1,92 @@
+{
+	"loadouts": {},
+	"parts": [
+		{
+			"backend": 2.0,
+			"line_width": 2.5,
+			"metadata": {},
+			"offset": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"part_id": "mcp_injected_chrono_pauldron",
+			"polygon_points": [
+				{
+					"x": -5.0,
+					"y": -4.0
+				},
+				{
+					"x": 5.0,
+					"y": -4.0
+				},
+				{
+					"x": 0.0,
+					"y": 6.0
+				}
+			],
+			"primary_color": {
+				"a": 1.0,
+				"b": 0.800000011920929,
+				"g": 1.0,
+				"hex": "00ffccff",
+				"r": 0.0
+			},
+			"region_rect": {
+				"h": 0.0,
+				"w": 0.0,
+				"x": 0.0,
+				"y": 0.0
+			},
+			"rotation_offset": 0.0,
+			"scale": {
+				"x": 1.0,
+				"y": 1.0
+			},
+			"scene_path": "",
+			"secondary_color": {
+				"a": 1.0,
+				"b": 1.0,
+				"g": 1.0,
+				"hex": "00ffffff",
+				"r": 0.0
+			},
+			"slot": 9.0,
+			"target_loadout": "player_shift_staff",
+			"texture_path": "",
+			"z_offset": 0.0
+		}
+	],
+	"version": "1.0",
+	"weapon_pieces": [
+		{
+			"backend": 0,
+			"color": {
+				"a": 1.0,
+				"b": 1.0,
+				"g": 1.0,
+				"hex": "00ffffff",
+				"r": 0.0
+			},
+			"glow_color": {
+				"a": 0.800000011920929,
+				"b": 1.0,
+				"g": 1.0,
+				"hex": "99ffffcc",
+				"r": 0.600000023841858
+			},
+			"key_tooth_length": 6.5,
+			"length": 9.5,
+			"local_offset": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"piece_id": "mcp_injected_brass_cog",
+			"piece_slot": 4,
+			"polygon_points": [],
+			"rotates_with_gear": true,
+			"target_loadout": "player_shift_staff",
+			"texture_path": "",
+			"thickness": 4.0
+		}
+	]
+}
