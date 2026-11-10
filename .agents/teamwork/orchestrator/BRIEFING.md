@@ -1,14 +1,14 @@
-# BRIEFING — 2026-11-10T14:26:45Z
+# BRIEFING — 2026-11-10T17:15:00Z
 
 ## Mission
-Integrate procedural stickman animation system from procedural-animation-test-scene into out-of-time-shift-gamejam with snappy motion tuning and global coverage across all stickman entities.
+Fix the animations and death sprites for stickmen to match the visual style of "One vs All" (https://www.youtube.com/watch?v=34NfuVCrfok), delivering clean readable stick-figure silhouettes with archetype color accents, fluid motion, and satisfying procedural dismemberment tumbling with momentum, while preserving all 393 test assertions.
 
 ## 🔒 My Identity
 - Archetype: orchestrator
 - Roles: orchestrator, user_liaison, human_reporter, successor
 - Working directory: c:\Users\Zero\Documents\GitHub Repositories\out-of-time-shift-gamejam\.agents\teamwork\orchestrator
-- Original parent: sentinel
-- Original parent conversation ID: aad1f89f-eaec-4a94-a8b5-14df5a163d8c
+- Original parent: caller (d5915e50-2366-4fb2-94d3-3366a5b55ee0)
+- Original parent conversation ID: d5915e50-2366-4fb2-94d3-3366a5b55ee0
 
 ## 🔒 My Workflow
 - **Pattern**: Project
@@ -17,50 +17,58 @@ Integrate procedural stickman animation system from procedural-animation-test-sc
 2. **Dispatch & Execute**:
    - Decompose into modular milestones (or run direct iteration loop).
    - Each milestone: Explorer -> Worker -> Reviewer -> Challenger -> Auditor gate.
-3. **On failure** (in this order): Retry -> Replace -> Skip -> Redistribute -> Redesign -> Escalate
+3. **On failure** (in this order):
+   - Retry: nudge stuck agent or re-send task
+   - Replace: spawn fresh agent with partial progress
+   - Skip: proceed without (only if non-critical)
+   - Redistribute: split stuck agent's remaining work
+   - Redesign: re-partition decomposition
+   - Escalate: report to parent (sub-orchestrators only, last resort)
 4. **Succession**: At 16 spawns, write handoff.md, spawn successor.
 - **Work items**:
-  1. Survey & Architecture Mapping [completed]
-  2. Project Plan & Milestone Decomposition in PROJECT.md [completed]
-  3. Milestone 1: Rig Asset & Scene Integration [completed]
-  4. Milestone 2: Snappy Motion Dynamics & Pose Solver [in-progress]
-  5. Milestone 3: Global Coverage Across All Stickman Entities [pending]
-  6. Milestone 4: Dedicated Test Scene & Automated Regression Suite [pending]
-- **Current phase**: 2 (Milestone 2 Execution)
-- **Current focus**: Milestone 2 Explorers (Gait & stance-lock, spring dynamics, squash/stretch & combat curves)
+  1. Survey & Visual Style Investigation (3 Explorers) [in-progress]
+  2. Implement Clean Stickman Silhouettes & Fluid Animation (R1) [pending]
+  3. Implement Clean Stickman Dismemberment & Ragdoll Remains (R2) [pending]
+  4. Visual Scene Verification & 393 Test Assertions Preservation (R3) [pending]
+- **Current phase**: 0 (Survey & Investigation)
+- **Current focus**: Parallel Exploration of Visual Style, Dismemberment, and Test Invariants
 
 ## 🔒 Key Constraints
 - NEVER write, modify, or create source code files directly.
 - NEVER run build/test commands yourself — require workers to do so.
-- NEVER investigate or explore the problem at the code level — dispatch Explorers for technical investigation.
+- NEVER investigate or explore the problem at the code level — dispatch Explorers for technical investigation. Your analysis is limited to reading agent reports, gate verdicts, and state files to make dispatch decisions.
 - You MAY use file-editing tools ONLY for metadata/state files (.md) in your .agents/teamwork/ folder.
 - If a Forensic Auditor reports INTEGRITY VIOLATION, milestone fails unconditionally.
 - Never reuse a subagent after it has delivered its handoff — always spawn fresh.
+- Model constraint: Use Sonnet (Model: "pro") for all implementors/workers.
+- Test constraint: All existing 393 test assertions must remain passing!
 
 ## Current Parent
-- Conversation ID: aad1f89f-eaec-4a94-a8b5-14df5a163d8c
-- Updated: not yet
+- Conversation ID: d5915e50-2366-4fb2-94d3-3366a5b55ee0
+- Updated: 2026-11-10T17:07:36Z
 
 ## Key Decisions Made
-- Milestone 1 GATE PASSED: 10/10 stress tests, 211/211 modular rig tests, 5/5 project suites passed.
-- Milestone 2 initiated: Dispatched 3 Explorers to design the integration of snappy procedural animation algorithms (piecewise stance-lock, Hermite smoothstep foot swing, second-order spring dynamics, volume-conserving squash/stretch, 3-phase combat sweep) into `ModularAssetSystem.StickmanPoseSolver`.
+- Previous milestones M1-M3 integrated procedural stickman backend and passed all 393 test assertions.
+- Current visual defect identified: live stickmen render as smeared multicolored blobby sprite clusters rather than clean stick-figure silhouettes; death remains render as scattered thin dark-red line debris.
+- Reference visual style: https://www.youtube.com/watch?v=34NfuVCrfok ("One vs All") — clean, solid stick-figure silhouettes with distinct archetype color tints, fluid and snappy movement/attacks, and satisfying dismemberment into readable body parts tumbling with momentum.
+- Launching 3 parallel Explorers (Model: "pro") to investigate live rendering, death/dismemberment, and test suite constraints.
 
 ## Team Roster
 | Agent | Type | Work Item | Status | Conv ID |
 |-------|------|-----------|--------|---------|
-| teamwork_explorer_m2_1 | teamwork_explorer | M2 Gait & Stance-Lock Integration | in-progress | 11da234e-787e-44f9-b6ba-bfeb22704be5 |
-| teamwork_explorer_m2_2 | teamwork_explorer | M2 Spring Dynamics & Recoil | in-progress | 00e3b013-a0f8-4d25-a2b4-8bb099b2474d |
-| teamwork_explorer_m2_3 | teamwork_explorer | M2 Squash/Stretch & Combat Arc | in-progress | 5d9fffba-9ba3-4b1e-a260-100c22cc8d31 |
+| teamwork_explorer_vis_1 | teamwork_explorer | Live Stickman Silhouette & Sprite Pipeline | in-progress | 5b97ec3c-e9d7-4d4e-8d41-1c5e53ae8ed7 |
+| teamwork_explorer_vis_2 | teamwork_explorer | Death Visuals & Dismemberment Physics | in-progress | 3385f464-6845-422f-b6cd-a2508d409493 |
+| teamwork_explorer_vis_3 | teamwork_explorer | Animation Quality & 393 Test Invariants | in-progress | 9c5973c3-3566-4cbf-810f-5ec67b5a574e |
 
 ## Succession Status
-- Succession required: no (running within orchestrator limit <= 128)
-- Spawn count: 19 / 128
-- Pending subagents: 11da234e-787e-44f9-b6ba-bfeb22704be5, 00e3b013-a0f8-4d25-a2b4-8bb099b2474d, 5d9fffba-9ba3-4b1e-a260-100c22cc8d31
-- Predecessor: none
+- Succession required: no
+- Spawn count: 3 / 16
+- Pending subagents: 5b97ec3c-e9d7-4d4e-8d41-1c5e53ae8ed7, 3385f464-6845-422f-b6cd-a2508d409493, 9c5973c3-3566-4cbf-810f-5ec67b5a574e
+- Predecessor: Gen 2 orchestrator
 - Successor: not yet spawned
 
 ## Active Timers
-- Heartbeat cron: 0fd925e9-f058-4fd8-8532-3aab95b2a4f6/task-323
+- Heartbeat cron: 67f72ebe-a4b5-4c61-98d6-877f3b07f5a1/task-34
 - Safety timer: none
 - On succession: kill all timers before spawning successor
 - On context truncation: handle timers as step 4 of the State Recovery section of your prompt says
@@ -68,7 +76,7 @@ Integrate procedural stickman animation system from procedural-animation-test-sc
 ## Artifact Index
 - .agents/teamwork/ORIGINAL_REQUEST.md — Verbatim user request
 - .agents/teamwork/PROJECT.md — Global architecture, feature inventory, milestones
-- .agents/teamwork/orchestrator/DISPATCH.md — Sentinel dispatch instruction
+- .agents/teamwork/orchestrator/DISPATCH.md — Parent dispatch instruction
 - .agents/teamwork/orchestrator/progress.md — Execution progress and liveness heartbeat
 - .agents/teamwork/orchestrator/BRIEFING.md — Current working memory
 - .agents/teamwork/orchestrator/GATE_STATUS.md — Gate status tracking

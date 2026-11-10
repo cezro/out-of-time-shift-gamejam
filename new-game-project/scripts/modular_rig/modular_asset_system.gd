@@ -869,10 +869,306 @@ class StickmanPose extends RefCounted:
 	var stance: String = "normal"
 
 
+# ============================================================================
+# Procedural Springs (Second-Order Dynamic Harmonic Oscillator)
+# ============================================================================
+
+class ProceduralSpring extends RefCounted:
+	var value: float = 0.0
+	var velocity: float = 0.0
+	var target: float = 0.0
+	var frequency: float = 5.0  ## Natural frequency in Hz
+	var damping: float = 0.75   ## Damping ratio zeta (0.70 - 0.85 for snappy response)
+	var max_velocity: float = 5000.0
+
+	func _init(p_frequency: float = 5.0, p_damping: float = 0.75, p_initial: float = 0.0) -> void:
+		frequency = p_frequency if (is_finite(p_frequency) and p_frequency > 0.0) else 5.0
+		damping = p_damping if (is_finite(p_damping) and p_damping >= 0.0) else 0.75
+		value = p_initial if is_finite(p_initial) else 0.0
+		target = value
+		velocity = 0.0
+
+	func reset(p_val: float) -> void:
+		value = p_val if is_finite(p_val) else 0.0
+		target = value
+		velocity = 0.0
+
+	func snap_to(p_target: float) -> void:
+		target = p_target if is_finite(p_target) else 0.0
+
+	func apply_impulse(impulse: float) -> void:
+		if is_finite(impulse):
+			velocity = clampf(velocity + impulse, -max_velocity, max_velocity)
+
+	func update(dt: float) -> float:
+		var safe_dt: float = clampf(dt, 0.0, 0.05) if is_finite(dt) else 0.0
+		if safe_dt <= 0.0:
+			return value
+
+		# Self-heal on non-finite state
+		if not is_finite(value) or not is_finite(velocity):
+			value = target if is_finite(target) else 0.0
+			velocity = 0.0
+			return value
+
+		var omega: float = TAU * frequency
+		var omega_sq: float = omega * omega
+		var damping_factor: float = 2.0 * damping * omega
+
+		# Semi-implicit Euler integration
+		var accel: float = -omega_sq * (value - target) - damping_factor * velocity
+		if not is_finite(accel):
+			accel = 0.0
+
+		velocity = clampf(velocity + accel * safe_dt, -max_velocity, max_velocity)
+		value += velocity * safe_dt
+		return value
+
+
+class ProceduralSpring2D extends RefCounted:
+	var value: Vector2 = Vector2.ZERO
+	var velocity: Vector2 = Vector2.ZERO
+	var target: Vector2 = Vector2.ZERO
+	var frequency: float = 5.0
+	var damping: float = 0.75
+	var max_velocity: float = 5000.0
+
+	func _init(p_frequency: float = 5.0, p_damping: float = 0.75, p_initial: Vector2 = Vector2.ZERO) -> void:
+		frequency = p_frequency if (is_finite(p_frequency) and p_frequency > 0.0) else 5.0
+		damping = p_damping if (is_finite(p_damping) and p_damping >= 0.0) else 0.75
+		value = p_initial if (is_finite(p_initial.x) and is_finite(p_initial.y)) else Vector2.ZERO
+		target = value
+		velocity = Vector2.ZERO
+
+	func reset(p_val: Vector2) -> void:
+		value = p_val if (is_finite(p_val.x) and is_finite(p_val.y)) else Vector2.ZERO
+		target = value
+		velocity = Vector2.ZERO
+
+	func snap_to(p_target: Vector2) -> void:
+		target = p_target if (is_finite(p_target.x) and is_finite(p_target.y)) else Vector2.ZERO
+
+	func apply_impulse(impulse: Vector2) -> void:
+		if is_finite(impulse.x) and is_finite(impulse.y):
+			velocity = (velocity + impulse).limit_length(max_velocity)
+
+	func update(dt: float) -> Vector2:
+		var safe_dt: float = clampf(dt, 0.0, 0.05) if is_finite(dt) else 0.0
+		if safe_dt <= 0.0:
+			return value
+
+		if not is_finite(value.x) or not is_finite(value.y) or not is_finite(velocity.x) or not is_finite(velocity.y):
+			value = target if (is_finite(target.x) and is_finite(target.y)) else Vector2.ZERO
+			velocity = Vector2.ZERO
+			return value
+
+		var omega: float = TAU * frequency
+		var omega_sq: float = omega * omega
+		var damping_factor: float = 2.0 * damping * omega
+
+		var accel: Vector2 = -omega_sq * (value - target) - damping_factor * velocity
+		if not is_finite(accel.x) or not is_finite(accel.y):
+			accel = Vector2.ZERO
+
+		velocity = (velocity + accel * safe_dt).limit_length(max_velocity)
+		value += velocity * safe_dt
+		return value
+
+
+class PoseDynamicsContext extends RefCounted:
+	var prev_velocity: Vector2 = Vector2.ZERO
+	var prev_facing: float = 1.0
+	var torso_lean_spring: ProceduralSpring = ProceduralSpring.new(4.5, 0.80, 0.0)
+	var head_lag_spring: ProceduralSpring2D = ProceduralSpring2D.new(5.5, 0.75, Vector2.ZERO)
+	var scarf_springs: Array[ProceduralSpring2D] = [
+		ProceduralSpring2D.new(5.0, 0.70, Vector2.ZERO),
+		ProceduralSpring2D.new(4.5, 0.72, Vector2.ZERO),
+		ProceduralSpring2D.new(4.0, 0.75, Vector2.ZERO),
+	]
+	var is_initialized: bool = false
+
+	func reset(initial_vel: Vector2 = Vector2.ZERO, facing: float = 1.0) -> void:
+		prev_velocity = initial_vel
+		prev_facing = facing
+		torso_lean_spring.reset(0.0)
+		head_lag_spring.reset(Vector2.ZERO)
+		for s in scarf_springs:
+			s.reset(Vector2.ZERO)
+		is_initialized = true
+
+
+class ProceduralGaitSolver extends RefCounted:
+	## Calculates physically grounded bipedal foot planting, cadence saturation, and pelvic bob.
+	## Prevents foot-sliding via piecewise stance-locking and Hermite smoothstep swing.
+
+	const CADENCE_MIN_HZ: float = 1.8
+	const CADENCE_RANGE_HZ: float = 2.0
+	const CADENCE_V_REF: float = 180.0
+
+	static func calculate_cadence(speed: float) -> float:
+		var safe_speed: float = absf(speed) if is_finite(speed) else 0.0
+		return CADENCE_MIN_HZ + CADENCE_RANGE_HZ * tanh(safe_speed / CADENCE_V_REF)
+
+	static func evaluate_foot_trajectory(phase: float, stride_half: float, step_height: float) -> Vector2:
+		var safe_phase: float = fposmod(phase, TAU) if is_finite(phase) else 0.0
+		var safe_stride: float = stride_half if is_finite(stride_half) else 14.0
+		var safe_height: float = step_height if is_finite(step_height) else 6.0
+
+		if safe_phase < PI:
+			# Stance phase [0, PI): Foot pinned to ground, moving linearly backward relative to hip
+			var t_stance: float = safe_phase / PI
+			var x: float = safe_stride * (1.0 - 2.0 * t_stance)
+			return Vector2(x, 0.0)
+		else:
+			# Swing phase [PI, TAU): Hermite smoothstep forward, parabolic vertical lift
+			var tau: float = (safe_phase - PI) / PI
+			var smooth_tau: float = tau * tau * (3.0 - 2.0 * tau)
+			var x: float = -safe_stride + 2.0 * safe_stride * smooth_tau
+			var y: float = safe_height * (4.0 * tau * (1.0 - tau))
+			return Vector2(x, y)
+
+
 class StickmanPoseSolver extends RefCounted:
 	## Exact port of generate_stickman_pose from bevy-game-test/src/render.rs,
 	## extended with optional stance parameter ("normal", "heavy_slash",
-	## "downward_slam", "parry_guard", "wall_slide", "well_unlock").
+	## "downward_slam", "parry_guard", "wall_slide", "well_unlock"),
+	## second-order spring dynamics, cadence-saturated gait, and volume squash/stretch.
+
+	## Volume-preserving scale vector from vertical scale factor (Sx * Sy = 1.0 => Sx = 1.0 / sqrt(Sy))
+	static func volume_conserving_scale(scale_y: float) -> Vector2:
+		var safe_sy: float = clampf(scale_y, 0.1, 3.0) if is_finite(scale_y) else 1.0
+		var scale_x: float = 1.0 / sqrt(safe_sy)
+		return Vector2(scale_x, safe_sy)
+
+	## Fast attack exponential easing (80% motion completed in 25% of duration)
+	static func ease_out_expo(t: float) -> float:
+		var ct: float = clampf(t, 0.0, 1.0) if is_finite(t) else 0.0
+		return 1.0 if ct >= 1.0 else 1.0 - pow(2.0, -10.0 * ct)
+
+	## Hermite smootherstep (C2 continuity at both boundaries)
+	static func smootherstep(t: float) -> float:
+		var ct: float = clampf(t, 0.0, 1.0) if is_finite(t) else 0.0
+		return ct * ct * ct * (ct * (ct * 6.0 - 15.0) + 10.0)
+
+	## Calculates aerial squash/stretch deformation based on simulation vertical velocity
+	static func calculate_air_squash_stretch(vy: float, is_grounded: bool) -> Vector2:
+		if is_grounded:
+			return Vector2.ONE
+		var safe_vy: float = vy if is_finite(vy) else 0.0
+		var sy: float = 1.0
+		if safe_vy > 50.0:
+			# Jump launch ascent stretch (Sy <= 1.32)
+			sy += clampf((safe_vy - 50.0) / 1656.25, 0.0, 0.32)
+		elif safe_vy < -150.0:
+			# High-speed terminal fall descent elongation (Sy <= 1.25)
+			sy += clampf((absf(safe_vy) - 150.0) / 3200.0, 0.0, 0.25)
+		return volume_conserving_scale(sy)
+
+	## Calculates 3-phase combat slash angle, blade stretch, and torso lean
+	static func calculate_combat_slash(attack_progress: float, facing: float, is_heavy: bool) -> Dictionary:
+		var p: float = clampf(attack_progress, 0.0, 1.0) if is_finite(attack_progress) else 0.0
+		var t: float = 1.0 - p # Elapsed attack progress: 0.0 (start) -> 1.0 (end)
+		var face_dir: float = 1.0 if facing >= 0.0 else -1.0
+
+		var swing_angle: float = 0.0
+		var blade_stretch: float = 1.0
+		var torso_lean_offset: float = 0.0
+		var total_arc: float = 3.0 if is_heavy else 2.4
+		var base_angle: float = 1.35 if is_heavy else -0.8
+		var coil_delta: float = 0.45 if is_heavy else 0.30
+
+		if is_heavy:
+			# Heavy slash arc sweeps from top-rear downwards
+			if t < 0.15:
+				var tau1: float = t / 0.15
+				var coil_prog: float = sin(tau1 * PI * 0.5)
+				swing_angle = base_angle + coil_delta * coil_prog
+				blade_stretch = 0.95
+				torso_lean_offset = -face_dir * 1.5 * coil_prog
+			elif t < 0.40:
+				var tau2: float = (t - 0.15) / 0.25
+				var strike_ease: float = ease_out_expo(tau2)
+				var coiled_angle: float = base_angle + coil_delta
+				var strike_arc: float = total_arc * 0.80
+				swing_angle = coiled_angle - strike_arc * strike_ease
+				blade_stretch = 1.0 + 0.20 * sin(tau2 * PI)
+				torso_lean_offset = face_dir * 3.0 * strike_ease
+			else:
+				var tau3: float = (t - 0.40) / 0.60
+				var settle_ease: float = smootherstep(tau3)
+				var coiled_angle: float = base_angle + coil_delta
+				var strike_arc: float = total_arc * 0.80
+				var remaining_arc: float = total_arc * 0.20
+				swing_angle = (coiled_angle - strike_arc) - remaining_arc * settle_ease - 0.08 * sin(tau3 * PI)
+				blade_stretch = 1.0 + 0.20 * (1.0 - settle_ease) * 0.5
+				torso_lean_offset = face_dir * 3.0 * (1.0 - tau3)
+		else:
+			# Standard slash sweeps forward
+			if t < 0.15:
+				var tau1: float = t / 0.15
+				var coil_prog: float = sin(tau1 * PI * 0.5)
+				swing_angle = base_angle - coil_delta * coil_prog
+				blade_stretch = 0.95
+				torso_lean_offset = -face_dir * 1.5 * coil_prog
+			elif t < 0.40:
+				var tau2: float = (t - 0.15) / 0.25
+				var strike_ease: float = ease_out_expo(tau2)
+				var coiled_angle: float = base_angle - coil_delta
+				var strike_arc: float = total_arc * 0.80
+				swing_angle = coiled_angle + strike_arc * strike_ease
+				blade_stretch = 1.0 + 0.15 * sin(tau2 * PI)
+				torso_lean_offset = face_dir * 3.0 * strike_ease
+			else:
+				var tau3: float = (t - 0.40) / 0.60
+				var settle_ease: float = smootherstep(tau3)
+				var coiled_angle: float = base_angle - coil_delta
+				var strike_arc: float = total_arc * 0.80
+				var remaining_arc: float = total_arc * 0.20
+				swing_angle = (coiled_angle + strike_arc) + remaining_arc * settle_ease + 0.08 * sin(tau3 * PI)
+				blade_stretch = 1.0 + 0.15 * (1.0 - settle_ease) * 0.5
+				torso_lean_offset = face_dir * 3.0 * (1.0 - tau3)
+
+		var hand_dir := Vector2(face_dir * cos(swing_angle), sin(swing_angle))
+		return {
+			"swing_angle": swing_angle,
+			"blade_dir": hand_dir.normalized(),
+			"hand_dir": hand_dir,
+			"blade_stretch": blade_stretch,
+			"torso_lean": torso_lean_offset
+		}
+
+	static func _apply_volume_deformation(pose: StickmanPose, anchor_pos: Vector2, scale_vec: Vector2) -> void:
+		var sx: float = scale_vec.x
+		var sy: float = scale_vec.y
+		var ax: float = anchor_pos.x
+		var ay: float = anchor_pos.y
+
+		pose.head_center = Vector2(ax + (pose.head_center.x - ax) * sx, ay + (pose.head_center.y - ay) * sy)
+		pose.neck = Vector2(ax + (pose.neck.x - ax) * sx, ay + (pose.neck.y - ay) * sy)
+		pose.pelvis = Vector2(ax + (pose.pelvis.x - ax) * sx, ay + (pose.pelvis.y - ay) * sy)
+
+		pose.left_shoulder = Vector2(ax + (pose.left_shoulder.x - ax) * sx, ay + (pose.left_shoulder.y - ay) * sy)
+		pose.left_elbow = Vector2(ax + (pose.left_elbow.x - ax) * sx, ay + (pose.left_elbow.y - ay) * sy)
+		pose.left_hand = Vector2(ax + (pose.left_hand.x - ax) * sx, ay + (pose.left_hand.y - ay) * sy)
+
+		pose.right_shoulder = Vector2(ax + (pose.right_shoulder.x - ax) * sx, ay + (pose.right_shoulder.y - ay) * sy)
+		pose.right_elbow = Vector2(ax + (pose.right_elbow.x - ax) * sx, ay + (pose.right_elbow.y - ay) * sy)
+		pose.right_hand = Vector2(ax + (pose.right_hand.x - ax) * sx, ay + (pose.right_hand.y - ay) * sy)
+
+		pose.left_hip = Vector2(ax + (pose.left_hip.x - ax) * sx, ay + (pose.left_hip.y - ay) * sy)
+		pose.left_knee = Vector2(ax + (pose.left_knee.x - ax) * sx, ay + (pose.left_knee.y - ay) * sy)
+		pose.left_foot = Vector2(ax + (pose.left_foot.x - ax) * sx, ay + (pose.left_foot.y - ay) * sy)
+
+		pose.right_hip = Vector2(ax + (pose.right_hip.x - ax) * sx, ay + (pose.right_hip.y - ay) * sy)
+		pose.right_knee = Vector2(ax + (pose.right_knee.x - ax) * sx, ay + (pose.right_knee.y - ay) * sy)
+		pose.right_foot = Vector2(ax + (pose.right_foot.x - ax) * sx, ay + (pose.right_foot.y - ay) * sy)
+
+		pose.sword_hilt = Vector2(ax + (pose.sword_hilt.x - ax) * sx, ay + (pose.sword_hilt.y - ay) * sy)
+		pose.sword_tip = Vector2(ax + (pose.sword_tip.x - ax) * sx, ay + (pose.sword_tip.y - ay) * sy)
+
+		for i in range(pose.scarf_nodes.size()):
+			pose.scarf_nodes[i] = Vector2(ax + (pose.scarf_nodes[i].x - ax) * sx, ay + (pose.scarf_nodes[i].y - ay) * sy)
+
 	static func generate_stickman_pose(
 		pos: Vector2,
 		facing: float,
@@ -882,7 +1178,11 @@ class StickmanPoseSolver extends RefCounted:
 		is_attacking: bool,
 		attack_progress: float,
 		is_enemy: bool,
-		stance: String = "normal"
+		stance: String = "normal",
+		accel_x: float = 0.0,
+		dynamics_ctx: PoseDynamicsContext = null,
+		dt: float = 0.016,
+		custom_squash_stretch: Vector2 = Vector2.ZERO
 	) -> StickmanPose:
 		var safe_pos: Vector2 = pos if (is_finite(pos.x) and is_finite(pos.y)) else Vector2.ZERO
 		var safe_facing: float = facing if is_finite(facing) else 1.0
@@ -894,6 +1194,9 @@ class StickmanPoseSolver extends RefCounted:
 		var safe_attack_progress: float = (
 			clampf(attack_progress, 0.0, 1.0) if is_finite(attack_progress) else 0.0
 		)
+		var safe_accel_x: float = clampf(accel_x, -3500.0, 3500.0) if is_finite(accel_x) else 0.0
+		var safe_dt: float = clampf(dt, 0.0, 0.05) if is_finite(dt) else 0.016
+
 		var speed: float = absf(safe_vel.x)
 		var is_running: bool = is_grounded and speed > 20.0
 		var is_jumping: bool = not is_grounded
@@ -902,10 +1205,20 @@ class StickmanPoseSolver extends RefCounted:
 		var pelvis: Vector2 = base_pelvis
 		var neck: Vector2 = pelvis + Vector2(face_dir * 3.0, 24.0)
 
-		# Torso lean based on movement or special martial stance
+		# 1. Cadence & Synchronized Gait Phase
+		var cadence_hz: float = ProceduralGaitSolver.calculate_cadence(speed)
+		var step_speed: float = TAU * cadence_hz
+		var gait_phase: float = fposmod(safe_anim_time * step_speed, TAU)
+
+		# 2. Torso Lean & Inverted Pendulum Pelvic Bobbing
+		var slash_info: Dictionary = {}
+		if is_attacking or stance == "heavy_slash":
+			slash_info = calculate_combat_slash(safe_attack_progress, face_dir, stance == "heavy_slash")
+
+		var eff_lean: float = 0.0
 		if stance == "heavy_slash":
 			pelvis.y -= 2.0
-			neck.x += face_dir * 8.0
+			neck.x += face_dir * 8.0 + float(slash_info.get("torso_lean", 0.0))
 		elif stance == "downward_slam":
 			pelvis.y += 4.0
 			neck = pelvis + Vector2(face_dir * 2.0, 22.0)
@@ -915,15 +1228,46 @@ class StickmanPoseSolver extends RefCounted:
 		elif stance == "wall_slide":
 			neck = pelvis + Vector2(-face_dir * 2.0, 24.0)
 		elif is_running:
-			pelvis.y += absf(sin(safe_anim_time * 14.0)) * 3.0
-			neck.x += face_dir * 6.0
-		elif is_jumping:
+			# Pelvis bobs at 2x stride frequency (vaulting mid-stance, dipping on strike)
+			pelvis.y += absf(sin(gait_phase)) * 3.0
+			if dynamics_ctx != null:
+				if not dynamics_ctx.is_initialized:
+					dynamics_ctx.reset(safe_vel, face_dir)
+				var eff_acc: float = safe_accel_x
+				if eff_acc == 0.0 and safe_dt > 0.0001:
+					eff_acc = clampf((safe_vel.x - dynamics_ctx.prev_velocity.x) / safe_dt, -3500.0, 3500.0)
+				dynamics_ctx.prev_velocity = safe_vel
+				var vel_ratio: float = clampf(speed / 340.0, 0.0, 1.0)
+				var acc_ratio: float = clampf((eff_acc * face_dir) / 2200.0, -1.2, 1.2)
+				var target_lean: float = face_dir * (6.0 + 2.0 * vel_ratio + 3.0 * acc_ratio)
+				dynamics_ctx.torso_lean_spring.snap_to(target_lean)
+				eff_lean = dynamics_ctx.torso_lean_spring.update(safe_dt)
+			else:
+				var vel_ratio: float = clampf(speed / 340.0, 0.0, 1.0)
+				var acc_ratio: float = clampf((safe_accel_x * face_dir) / 2200.0, -1.0, 1.0)
+				eff_lean = face_dir * (6.0 + 2.0 * vel_ratio + 2.0 * acc_ratio)
+			neck.x += eff_lean
+		elif is_jumping or stance == "jump":
 			neck.x += face_dir * 4.0
+		elif is_attacking:
+			neck.x += float(slash_info.get("torso_lean", 0.0))
 
-		var head_center: Vector2 = neck + Vector2(face_dir * 3.0, 10.0)
+		# 3. Dual-Frequency Head Bob & Secondary Recoil
+		var head_center: Vector2
+		if is_running:
+			var head_vert_bob: float = (0.5 - 0.5 * cos(gait_phase * 2.0)) * 1.5
+			var head_pitch: float = sin(gait_phase) * 0.8
+			head_center = neck + Vector2(face_dir * (3.0 + 1.5 + head_pitch), 10.0 - head_vert_bob)
+			if dynamics_ctx != null:
+				var head_recoil_target: Vector2 = Vector2(-face_dir * clampf(safe_accel_x * face_dir / 2200.0, -1.0, 1.0) * 2.5, 0.0)
+				dynamics_ctx.head_lag_spring.snap_to(head_recoil_target)
+				head_center += dynamics_ctx.head_lag_spring.update(safe_dt)
+		else:
+			head_center = neck + Vector2(face_dir * 3.0, 10.0)
+
 		var head_radius: float = 7.5 if is_enemy else 8.5
 
-		# Legs
+		# 4. Legs: Stance-locking & Hermite Smoothstep Swing
 		var left_hip: Vector2 = pelvis + Vector2(-face_dir * 3.0, 0.0)
 		var right_hip: Vector2 = pelvis + Vector2(face_dir * 3.0, 0.0)
 		var left_knee: Vector2
@@ -937,23 +1281,28 @@ class StickmanPoseSolver extends RefCounted:
 			left_foot = left_knee + Vector2(-face_dir * 3.0, -7.0)
 			right_knee = right_hip + Vector2(face_dir * 4.0, -13.0)
 			right_foot = right_knee + Vector2(face_dir * 2.0, -13.0)
-		elif stance == "downward_slam" or is_jumping:
+		elif stance == "downward_slam" or stance == "jump" or is_jumping:
 			# Jumping / falling pose: legs tucked
 			left_knee = left_hip + Vector2(-face_dir * 6.0, -10.0)
 			left_foot = left_knee + Vector2(-face_dir * 4.0, -10.0)
 			right_knee = right_hip + Vector2(face_dir * 8.0, -8.0)
 			right_foot = right_knee + Vector2(face_dir * 6.0, -12.0)
 		elif is_running:
-			# Running stride
-			var phase: float = safe_anim_time * clampf(speed * 0.04, 8.0, 22.0)
-			var l_angle: float = sin(phase)
-			var r_angle: float = sin(phase + PI)
+			# Piecewise stance-locking and Hermite smoothstep foot swing
+			var speed_norm: float = clampf(speed / 340.0, 0.0, 1.0)
+			var stride_half: float = lerpf(8.0, 14.0, speed_norm)
+			var step_height: float = lerpf(3.0, 6.0, speed_norm)
 
-			left_knee = left_hip + Vector2(l_angle * 12.0, -12.0 - absf(l_angle) * 3.0)
-			left_foot = left_knee + Vector2(l_angle * 10.0, -14.0)
+			var l_traj := ProceduralGaitSolver.evaluate_foot_trajectory(gait_phase, stride_half, step_height)
+			var r_traj := ProceduralGaitSolver.evaluate_foot_trajectory(fposmod(gait_phase + PI, TAU), stride_half, step_height)
 
-			right_knee = right_hip + Vector2(r_angle * 12.0, -12.0 - absf(r_angle) * 3.0)
-			right_foot = right_knee + Vector2(r_angle * 10.0, -14.0)
+			left_foot = Vector2(left_hip.x + face_dir * l_traj.x, pelvis.y - 26.0 + l_traj.y)
+			var l_mid: Vector2 = (left_hip + left_foot) * 0.5
+			left_knee = Vector2(l_mid.x + face_dir * (3.0 + (l_traj.y / maxf(step_height, 0.001)) * 3.0), l_mid.y + 1.0 + l_traj.y * 0.4)
+
+			right_foot = Vector2(right_hip.x + face_dir * r_traj.x, pelvis.y - 26.0 + r_traj.y)
+			var r_mid: Vector2 = (right_hip + right_foot) * 0.5
+			right_knee = Vector2(r_mid.x + face_dir * (3.0 + (r_traj.y / maxf(step_height, 0.001)) * 3.0), r_mid.y + 1.0 + r_traj.y * 0.4)
 		else:
 			# Idle breathing stance
 			var breath: float = sin(safe_anim_time * 3.0) * 1.5
@@ -962,7 +1311,7 @@ class StickmanPoseSolver extends RefCounted:
 			right_knee = right_hip + Vector2(face_dir * 6.0, -12.0 + breath)
 			right_foot = right_knee + Vector2(0.0, -14.0)
 
-		# Arms & Weapon
+		# 5. Arms & Weapon
 		var left_shoulder: Vector2 = neck + Vector2(-face_dir * 4.0, -2.0)
 		var right_shoulder: Vector2 = neck + Vector2(face_dir * 4.0, -2.0)
 		var left_elbow: Vector2
@@ -991,16 +1340,14 @@ class StickmanPoseSolver extends RefCounted:
 			sword_hilt = right_hand - guard_dir * 4.0
 			sword_tip = right_hand + guard_dir * 38.0
 		elif stance == "heavy_slash":
-			# Wide high-gear heavy cleave arc
-			var sweep: float = clampf(1.0 - safe_attack_progress, 0.0, 1.0)
-			var swing_angle: float = 1.35 - sweep * 2.6
-			var hand_dir := Vector2(face_dir * cos(swing_angle), sin(swing_angle)).normalized()
+			var hand_dir: Vector2 = slash_info.get("blade_dir", Vector2(face_dir, 0.0))
+			var b_stretch: float = slash_info.get("blade_stretch", 1.0)
 			right_hand = right_shoulder + hand_dir * 24.0
 			right_elbow = (right_shoulder + right_hand) * 0.5 + Vector2(0.0, 7.0)
 			left_hand = right_hand + Vector2(-face_dir * 3.0, -1.0)
 			left_elbow = (left_shoulder + left_hand) * 0.5
 			sword_hilt = right_hand - hand_dir * 6.0
-			sword_tip = right_hand + hand_dir * 44.0
+			sword_tip = right_hand + hand_dir * (44.0 * b_stretch)
 		elif stance == "wall_slide":
 			# One hand bracing wall, weapon angled down-away
 			left_elbow = left_shoulder + Vector2(-face_dir * 6.0, 4.0)
@@ -1020,29 +1367,24 @@ class StickmanPoseSolver extends RefCounted:
 			sword_hilt = right_hand - key_dir * 4.0
 			sword_tip = right_hand + key_dir * 38.0
 		elif is_attacking:
-			# Forward slash swing pose (exact match to bevy-game-test/src/render.rs)
-			var sweep: float = clampf(1.0 - safe_attack_progress, 0.0, 1.0)
-			var swing_angle: float = -0.8 + sweep * 2.2
-			var hand_dir := Vector2(face_dir * cos(swing_angle), sin(swing_angle))
-
+			var hand_dir: Vector2 = slash_info.get("hand_dir", Vector2(face_dir, 0.0))
+			var blade_dir: Vector2 = slash_info.get("blade_dir", Vector2(face_dir, 0.0))
+			var b_stretch: float = slash_info.get("blade_stretch", 1.0)
 			right_hand = right_shoulder + hand_dir * 22.0
 			right_elbow = (right_shoulder + right_hand) * 0.5 + Vector2(0.0, 6.0)
 			left_hand = right_hand + Vector2(-face_dir * 4.0, -2.0)
 			left_elbow = (left_shoulder + left_hand) * 0.5
-
-			var blade_dir: Vector2 = hand_dir.normalized()
 			sword_hilt = right_hand - blade_dir * 6.0
-			sword_tip = right_hand + blade_dir * 38.0
+			sword_tip = right_hand + blade_dir * (38.0 * b_stretch)
 		elif is_running:
-			# Pumping arms (exact match to bevy-game-test/src/render.rs)
-			var arm_phase: float = safe_anim_time * clampf(speed * 0.04, 8.0, 22.0)
-			var l_swing: float = sin(arm_phase + PI)
-			var r_swing: float = sin(arm_phase)
+			# Antiphase arm swing counterbalancing legs
+			var l_swing: float = sin(gait_phase)
+			var r_swing: float = sin(gait_phase + PI)
 
-			left_elbow = left_shoulder + Vector2(l_swing * 8.0, -10.0)
-			left_hand = left_elbow + Vector2(l_swing * 6.0, -8.0)
+			left_elbow = left_shoulder + Vector2(face_dir * l_swing * 8.0, -10.0)
+			left_hand = left_elbow + Vector2(face_dir * l_swing * 6.0, -8.0)
 
-			right_elbow = right_shoulder + Vector2(r_swing * 8.0, -8.0)
+			right_elbow = right_shoulder + Vector2(face_dir * r_swing * 8.0, -8.0)
 			right_hand = right_elbow + Vector2(face_dir * 10.0, 4.0)
 
 			var sword_dir: Vector2 = Vector2(face_dir * 0.8, -0.6).normalized()
@@ -1060,18 +1402,50 @@ class StickmanPoseSolver extends RefCounted:
 			sword_hilt = right_hand - sword_dir * 5.0
 			sword_tip = right_hand + sword_dir * 34.0
 
-		# Scarf / Headband ribbon (exact match to bevy-game-test/src/render.rs)
+		# 6. Scarf / Headband ribbon with secondary spring lag and distance constraint clamping
 		var clamped_vy: float = clampf(safe_vel.y, -2000.0, 2000.0)
 		var head_back: Vector2 = head_center + Vector2(-face_dir * head_radius, 0.0)
-		var scarf_0: Vector2 = head_back + Vector2(
+		var target_s0: Vector2 = head_back + Vector2(
 			-face_dir * 8.0, (sin(safe_anim_time * 8.0) * 3.0) - clamped_vy * 0.02
 		)
-		var scarf_1: Vector2 = scarf_0 + Vector2(
+		var target_s1: Vector2 = target_s0 + Vector2(
 			-face_dir * 10.0, (sin(safe_anim_time * 8.0 + 1.2) * 4.0) - clamped_vy * 0.03
 		)
-		var scarf_2: Vector2 = scarf_1 + Vector2(
+		var target_s2: Vector2 = target_s1 + Vector2(
 			-face_dir * 12.0, (sin(safe_anim_time * 8.0 + 2.4) * 5.0) - clamped_vy * 0.04
 		)
+
+		var scarf_0: Vector2 = target_s0
+		var scarf_1: Vector2 = target_s1
+		var scarf_2: Vector2 = target_s2
+
+		if dynamics_ctx != null:
+			dynamics_ctx.scarf_springs[0].snap_to(target_s0)
+			scarf_0 = dynamics_ctx.scarf_springs[0].update(safe_dt)
+			dynamics_ctx.scarf_springs[1].snap_to(target_s1)
+			scarf_1 = dynamics_ctx.scarf_springs[1].update(safe_dt)
+			dynamics_ctx.scarf_springs[2].snap_to(target_s2)
+			scarf_2 = dynamics_ctx.scarf_springs[2].update(safe_dt)
+
+		# Distance constraint clamping L in [6.0, 14.0] px
+		var d01: float = scarf_0.distance_to(scarf_1)
+		if d01 > 0.001:
+			var dir01: Vector2 = (scarf_1 - scarf_0) / d01
+			scarf_1 = scarf_0 + dir01 * clampf(d01, 6.0, 14.0)
+		var d12: float = scarf_1.distance_to(scarf_2)
+		if d12 > 0.001:
+			var dir12: Vector2 = (scarf_2 - scarf_1) / d12
+			scarf_2 = scarf_1 + dir12 * clampf(d12, 6.0, 14.0)
+
+		# Ensure trailing invariant behind head_center in facing direction
+		if face_dir > 0.0:
+			scarf_0.x = minf(scarf_0.x, head_back.x - 4.0)
+			scarf_1.x = minf(scarf_1.x, scarf_0.x - 4.0)
+			scarf_2.x = minf(scarf_2.x, scarf_1.x - 4.0)
+		else:
+			scarf_0.x = maxf(scarf_0.x, head_back.x + 4.0)
+			scarf_1.x = maxf(scarf_1.x, scarf_0.x + 4.0)
+			scarf_2.x = maxf(scarf_2.x, scarf_1.x + 4.0)
 
 		var pose := StickmanPose.new()
 		pose.head_center = head_center
@@ -1094,6 +1468,107 @@ class StickmanPoseSolver extends RefCounted:
 		pose.sword_tip = sword_tip
 		pose.scarf_nodes = [scarf_0, scarf_1, scarf_2]
 		pose.stance = stance
+
+		# Volume-preserving squash & stretch anchor deformation
+		var sq_scale: Vector2 = Vector2.ONE
+		if custom_squash_stretch != Vector2.ZERO and is_finite(custom_squash_stretch.x) and is_finite(custom_squash_stretch.y) and custom_squash_stretch.x > 0.0 and custom_squash_stretch.y > 0.0:
+			sq_scale = custom_squash_stretch
+		elif not is_grounded and stance == "normal":
+			sq_scale = calculate_air_squash_stretch(safe_vel.y, is_grounded)
+
+		if not is_equal_approx(sq_scale.y, 1.0) or not is_equal_approx(sq_scale.x, 1.0):
+			_apply_volume_deformation(pose, safe_pos, sq_scale)
+
+		return pose
+
+	## Generates a StickmanPose for bisected RagdollPieceData (UPPER_TORSO or LOWER_LEGS)
+	## tumbled by piece_rotation so equipped helmets, cowls, chestplates, weapons, and sabatons
+	## authentically rotate in mid-air.
+	static func generate_ragdoll_pose(
+		piece_pos: Vector2,
+		piece_rotation: float,
+		facing: float,
+		part: int,
+		_loadout_id: String = ""
+	) -> StickmanPose:
+		var safe_pos: Vector2 = piece_pos if (is_finite(piece_pos.x) and is_finite(piece_pos.y)) else Vector2.ZERO
+		var safe_rot: float = piece_rotation if is_finite(piece_rotation) else 0.0
+		var safe_facing: float = facing if is_finite(facing) else 1.0
+		var face_dir: float = 1.0 if safe_facing >= 0.0 else -1.0
+
+		var pose := StickmanPose.new()
+		pose.stance = "ragdoll"
+
+		if part == 0: # RagdollPart.UPPER_TORSO
+			pose.pelvis = safe_pos
+			var neck_rel := Vector2(face_dir * 3.0, 24.0).rotated(safe_rot)
+			pose.neck = pose.pelvis + neck_rel
+			var head_rel := Vector2(face_dir * 3.0, 10.0).rotated(safe_rot)
+			pose.head_center = pose.neck + head_rel
+			pose.head_radius = 8.0
+
+			var l_sh_rel := Vector2(-face_dir * 5.0, -2.0).rotated(safe_rot)
+			var r_sh_rel := Vector2(face_dir * 5.0, -2.0).rotated(safe_rot)
+			pose.left_shoulder = pose.neck + l_sh_rel
+			pose.right_shoulder = pose.neck + r_sh_rel
+
+			var l_el_rel := Vector2(-face_dir * 8.0, -8.0).rotated(safe_rot)
+			var r_el_rel := Vector2(face_dir * 8.0, -8.0).rotated(safe_rot)
+			pose.left_elbow = pose.left_shoulder + l_el_rel
+			pose.right_elbow = pose.right_shoulder + r_el_rel
+
+			var l_h_rel := Vector2(-face_dir * 6.0, -8.0).rotated(safe_rot)
+			var r_h_rel := Vector2(face_dir * 7.0, -7.0).rotated(safe_rot)
+			pose.left_hand = pose.left_elbow + l_h_rel
+			pose.right_hand = pose.right_elbow + r_h_rel
+
+			var w_dir := Vector2(face_dir * 0.7, 0.7).rotated(safe_rot).normalized()
+			pose.sword_hilt = pose.right_hand - w_dir * 5.0
+			pose.sword_tip = pose.right_hand + w_dir * 34.0
+
+			var head_back := pose.head_center + Vector2(-face_dir * pose.head_radius, 0.0).rotated(safe_rot)
+			var s0 := head_back + Vector2(-face_dir * 8.0, 0.0).rotated(safe_rot)
+			var s1 := s0 + Vector2(-face_dir * 10.0, 0.0).rotated(safe_rot)
+			var s2 := s1 + Vector2(-face_dir * 12.0, 0.0).rotated(safe_rot)
+			pose.scarf_nodes = [s0, s1, s2]
+
+			# Lower limbs collapsed to pelvis cut plane
+			pose.left_hip = pose.pelvis
+			pose.right_hip = pose.pelvis
+			pose.left_knee = pose.pelvis
+			pose.right_knee = pose.pelvis
+			pose.left_foot = pose.pelvis
+			pose.right_foot = pose.pelvis
+		else: # RagdollPart.LOWER_LEGS
+			pose.pelvis = safe_pos
+			pose.neck = safe_pos
+			pose.head_center = safe_pos
+			pose.head_radius = 0.0
+			pose.left_shoulder = safe_pos
+			pose.right_shoulder = safe_pos
+			pose.left_elbow = safe_pos
+			pose.right_elbow = safe_pos
+			pose.left_hand = safe_pos
+			pose.right_hand = safe_pos
+			pose.sword_hilt = safe_pos
+			pose.sword_tip = safe_pos
+			pose.scarf_nodes = [safe_pos, safe_pos, safe_pos]
+
+			var l_hip_rel := Vector2(-face_dir * 4.0, 0.0).rotated(safe_rot)
+			var r_hip_rel := Vector2(face_dir * 4.0, 0.0).rotated(safe_rot)
+			pose.left_hip = pose.pelvis + l_hip_rel
+			pose.right_hip = pose.pelvis + r_hip_rel
+
+			var l_knee_rel := Vector2(-face_dir * 6.0, -12.0).rotated(safe_rot)
+			var r_knee_rel := Vector2(face_dir * 6.0, -12.0).rotated(safe_rot)
+			pose.left_knee = pose.left_hip + l_knee_rel
+			pose.right_knee = pose.right_hip + r_knee_rel
+
+			var l_foot_rel := Vector2(-face_dir * 4.0, -13.0).rotated(safe_rot)
+			var r_foot_rel := Vector2(face_dir * 4.0, -13.0).rotated(safe_rot)
+			pose.left_foot = pose.left_knee + l_foot_rel
+			pose.right_foot = pose.right_knee + r_foot_rel
+
 		return pose
 
 	## Computes bone transform {"start", "end", "center", "angle", "length"} for any PartSlot.
@@ -1593,7 +2068,15 @@ class ModularAssetRegistry extends RefCounted:
 		)
 		register_part(player_weapon_slot)
 		player.equip_part(player_weapon_slot)
+		player.rig_scene_path = PROCEDURAL_STICKMAN_SCENE_PATH
 		register_loadout(player)
+
+		# Register "player_default" as an explicit alias to "player_shift_staff"
+		var player_default := player.duplicate_loadout()
+		player_default.loadout_id = "player_default"
+		player_default.display_name = "Default Chronos Nomad"
+		player_default.rig_scene_path = PROCEDURAL_STICKMAN_SCENE_PATH
+		register_loadout(player_default)
 
 		# --------------------------------------------------------------------
 		# 2. ENEMY: "enemy_runner" (Crimson melee slasher)
@@ -1618,6 +2101,7 @@ class ModularAssetRegistry extends RefCounted:
 		register_weapon_piece(runner_edge)
 		runner.weapon_assembly.set_piece(runner_grip)
 		runner.weapon_assembly.set_piece(runner_edge)
+		runner.rig_scene_path = PROCEDURAL_STICKMAN_SCENE_PATH
 		register_loadout(runner)
 
 		# --------------------------------------------------------------------
@@ -1667,6 +2151,7 @@ class ModularAssetRegistry extends RefCounted:
 		register_weapon_piece(ninja_blade)
 		ninja.weapon_assembly.set_piece(ninja_guard)
 		ninja.weapon_assembly.set_piece(ninja_blade)
+		ninja.rig_scene_path = PROCEDURAL_STICKMAN_SCENE_PATH
 		register_loadout(ninja)
 
 		# --------------------------------------------------------------------
@@ -1753,6 +2238,7 @@ class ModularAssetRegistry extends RefCounted:
 		])
 		register_weapon_piece(cleaver_blade)
 		heavy.weapon_assembly.set_piece(cleaver_blade)
+		heavy.rig_scene_path = PROCEDURAL_STICKMAN_SCENE_PATH
 		register_loadout(heavy)
 
 		# --------------------------------------------------------------------
@@ -1783,6 +2269,7 @@ class ModularAssetRegistry extends RefCounted:
 		gunner_semi.weapon_assembly.set_piece(semi_stock)
 		gunner_semi.weapon_assembly.set_piece(semi_barrel)
 		gunner_semi.weapon_assembly.set_piece(semi_scope)
+		gunner_semi.rig_scene_path = PROCEDURAL_STICKMAN_SCENE_PATH
 		register_loadout(gunner_semi)
 
 		# --------------------------------------------------------------------
@@ -1813,6 +2300,7 @@ class ModularAssetRegistry extends RefCounted:
 		gunner_auto.weapon_assembly.set_piece(smg_grip)
 		gunner_auto.weapon_assembly.set_piece(smg_barrel)
 		gunner_auto.weapon_assembly.set_piece(smg_drum)
+		gunner_auto.rig_scene_path = PROCEDURAL_STICKMAN_SCENE_PATH
 		register_loadout(gunner_auto)
 
 		# --------------------------------------------------------------------
@@ -1857,6 +2345,7 @@ class ModularAssetRegistry extends RefCounted:
 		sniper.weapon_assembly.set_piece(rail_grip)
 		sniper.weapon_assembly.set_piece(rail_barrel)
 		sniper.weapon_assembly.set_piece(laser_module)
+		sniper.rig_scene_path = PROCEDURAL_STICKMAN_SCENE_PATH
 		register_loadout(sniper)
 
 		# --------------------------------------------------------------------

@@ -27,6 +27,14 @@ extends CharacterBody2D
 @export var head_lean: float = 9.0
 @export var snappiness: float = 18.0
 
+@export_group("Dynamic Squash & Stretch")
+@export var squash_stretch_enabled: bool = true
+@export var landing_spring_frequency: float = 6.5
+@export var landing_spring_damping: float = 0.72
+@export var max_jump_stretch: float = 1.32
+@export var max_fall_stretch: float = 1.25
+@export var max_landing_squash: float = 0.68
+
 @export_group("Air Animation")
 @export var air_foot_spread: float = 14.0
 @export var air_foot_lift: float = 12.0
@@ -67,14 +75,40 @@ var current_anim_state: String = "idle"
 
 const HIP_REST_X: float = 284.51
 
+# Motion dynamics & second-order spring states
+var _land_spring_val: float = 1.0
+var _land_spring_vel: float = 0.0
+var _was_grounded_last: bool = true
+var _last_vy: float = 0.0
+var _current_squash_scale: Vector2 = Vector2.ONE
+
+var _prev_velocity: Vector2 = Vector2.ZERO
+var _current_accel_x: float = 0.0
+var _torso_lean_spring = null
+var _attack_timer: float = 0.0
+var _attack_duration: float = 0.22
+var rig_rest_position: Vector2 = Vector2(-284.0, -303.0)
+var _rig_rest_initialized: bool = false
+
 
 # ----------------------------------------------------------------------------
 # Lifecycle
 # ----------------------------------------------------------------------------
 
+func _init_dynamics_springs() -> void:
+	if _torso_lean_spring == null:
+		var mas = load("res://scripts/modular_rig/modular_asset_system.gd")
+		if mas != null and "ProceduralSpring" in mas:
+			_torso_lean_spring = mas.ProceduralSpring.new(4.5, 0.80, 0.0)
+
+
 func _ensure_references() -> void:
 	if rig_node == null:
 		rig_node = get_node_or_null("Rig")
+	if rig_node != null and not _rig_rest_initialized:
+		rig_rest_position = rig_node.position
+		_rig_rest_initialized = true
+	_init_dynamics_springs()
 	if ik_targets_node == null:
 		ik_targets_node = get_node_or_null("IK Targets")
 	if skeleton == null:
@@ -165,6 +199,13 @@ func update_procedural_animation(
 	var safe_vel: Vector2 = p_velocity if (is_finite(p_velocity.x) and is_finite(p_velocity.y)) else Vector2.ZERO
 	var safe_delta: float = delta if (is_finite(delta) and delta >= 0.0) else 0.0
 
+	# Track horizontal acceleration (ax = dvx / dt) for dynamic torso lean
+	if safe_delta > 0.0001:
+		_current_accel_x = clampf((safe_vel.x - _prev_velocity.x) / safe_delta, -3500.0, 3500.0)
+	else:
+		_current_accel_x = 0.0
+	_prev_velocity = safe_vel
+
 	# Update facing direction if valid and non-zero; preserve valid +/-1.0 invariant
 	if not is_nan(facing_direction) and facing_direction != 0.0:
 		facing = 1.0 if facing_direction > 0.0 else -1.0
@@ -178,12 +219,15 @@ func update_procedural_animation(
 	var speed: float = absf(safe_vel.x)
 	var speed_ratio: float = clampf(speed / maxf(move_speed, 1.0), 0.0, 1.0)
 
-	# Accumulate gait phase based on horizontal ground displacement
-	if is_on_ground and stride_length > 0.01:
-		var distance_moved: float = speed * safe_delta
-		phase = fposmod(phase + distance_moved / (stride_length * 2.0), 1.0)
+	# Accumulate gait phase based on cadence saturation curve to prevent foot-sliding
+	if is_on_ground and speed > 5.0:
+		var cadence_hz: float = 1.8 + 2.0 * tanh(speed / 180.0)
+		phase = fposmod(phase + cadence_hz * safe_delta, 1.0)
 		if not is_finite(phase):
 			phase = 0.0
+	elif is_on_ground and speed <= 5.0:
+		# Gradually settle feet toward rest stance when stopped
+		phase = move_toward(phase, 0.0, 4.0 * safe_delta)
 
 	update_target_animation(safe_delta, speed_ratio, is_on_ground, safe_vel, current_state)
 
@@ -200,13 +244,31 @@ func update_target_animation(
 	var safe_speed_ratio: float = clampf(speed_ratio, 0.0, 1.0) if is_finite(speed_ratio) else 0.0
 	var safe_vel: Vector2 = p_velocity if (is_finite(p_velocity.x) and is_finite(p_velocity.y)) else Vector2.ZERO
 
+	# Manage attack animation progress timer
+	if current_state in ["slash", "heavy_slash"]:
+		_attack_timer = minf(_attack_timer + safe_delta, _attack_duration)
+	else:
+		_attack_timer = 0.0
+
+	# Update landing impact spring and aerial squash/stretch
+	_current_squash_scale = _update_squash_stretch(safe_vel, is_on_ground, safe_delta)
+
 	var offsets: Dictionary = {}
 
 	# Default standing / resting pose
 	for target in targets:
 		offsets[target] = Vector2.ZERO
 
-	if not is_on_ground or current_state in ["jump", "fall", "air"]:
+	if current_state == "downward_slam":
+		apply_air_offsets(offsets, safe_vel)
+		if arm_r != null and arm_l != null:
+			offsets[arm_r] = Vector2(facing * 6.0, hand_lift * 2.5)
+			offsets[arm_l] = Vector2(-facing * 4.0, hand_lift * 2.0)
+	elif current_state in ["aim", "gunner_aim", "sniper_brace"]:
+		apply_aim_offsets(offsets, current_state == "sniper_brace")
+	elif current_state in ["hitstun", "juggled"]:
+		apply_hitstun_offsets(offsets, current_state == "juggled")
+	elif not is_on_ground or current_state in ["jump", "fall", "air"]:
 		apply_air_offsets(offsets, safe_vel)
 	elif current_state == "wall_slide":
 		apply_wall_slide_offsets(offsets)
@@ -217,10 +279,22 @@ func update_target_animation(
 	elif safe_speed_ratio > 0.02 or current_state in ["run", "walk"]:
 		apply_run_offsets(offsets, safe_speed_ratio)
 
+	# Inverted pendulum pelvic bobbing on rig container (2x stride frequency)
+	if rig_node != null:
+		if is_on_ground and safe_speed_ratio > 0.02:
+			var pelvic_bob: float = (0.5 - 0.5 * cos(phase * TAU * 2.0)) * 4.0 * safe_speed_ratio
+			rig_node.position.y = rig_rest_position.y + pelvic_bob
+		else:
+			rig_node.position.y = move_toward(rig_node.position.y, rig_rest_position.y, 60.0 * safe_delta)
+
 	var safe_snappiness: float = snappiness if (is_finite(snappiness) and snappiness >= 0.0) else 18.0
 	var weight: float = clampf(1.0 - exp(-safe_snappiness * safe_delta), 0.0, 1.0) if safe_delta > 0.0 else 1.0
 	if not is_finite(weight):
 		weight = 1.0
+
+	const FLOOR_Y: float = 628.0 # Standard floor level of IK targets
+	var sx: float = _current_squash_scale.x
+	var sy: float = _current_squash_scale.y
 
 	for target in targets:
 		if target == null:
@@ -230,11 +304,72 @@ func update_target_animation(
 		if not is_finite(offset.x) or not is_finite(offset.y):
 			offset = Vector2.ZERO
 
+		# Compute raw target position
+		var raw_target: Vector2 = base_rest + offset
+
+		# Apply volume-preserving deformation anchored at (HIP_REST_X, FLOOR_Y)
+		var deformed_target: Vector2
+		if is_equal_approx(sy, 1.0) and is_equal_approx(sx, 1.0):
+			deformed_target = raw_target
+		else:
+			var height_from_floor: float = FLOOR_Y - raw_target.y
+			var scaled_y: float = FLOOR_Y - height_from_floor * sy
+			var dx_from_hip: float = raw_target.x - HIP_REST_X
+			var scaled_x: float = HIP_REST_X + dx_from_hip * sx
+			deformed_target = Vector2(scaled_x, scaled_y)
+
 		# Self-heal corrupted target position before lerp to break irreversible NaN latching
 		if not is_finite(target.position.x) or not is_finite(target.position.y):
-			target.position = base_rest
+			target.position = deformed_target
 
-		target.position = target.position.lerp(base_rest + offset, weight)
+		target.position = target.position.lerp(deformed_target, weight)
+
+
+## Calculates volume-preserving squash/stretch scale vector (Sx * Sy = 1.0 => Sx = 1.0 / sqrt(Sy)).
+func _update_squash_stretch(safe_vel: Vector2, is_on_ground: bool, dt: float) -> Vector2:
+	if not squash_stretch_enabled:
+		_land_spring_val = 1.0
+		_land_spring_vel = 0.0
+		_was_grounded_last = is_on_ground
+		_last_vy = safe_vel.y
+		return Vector2.ONE
+
+	# In Godot 2D coordinates: +Y is DOWN (downward fall velocity is vy > 0)
+	var downward_impact_speed: float = maxf(_last_vy, 0.0)
+	if is_on_ground and not _was_grounded_last and downward_impact_speed > 100.0:
+		var compression_ratio: float = clampf((downward_impact_speed - 100.0) / 1300.0, 0.0, 1.0) * (1.0 - max_landing_squash)
+		_land_spring_vel -= compression_ratio * 45.0
+
+	_was_grounded_last = is_on_ground
+	_last_vy = safe_vel.y
+
+	# Update landing spring (Semi-implicit Euler)
+	var safe_dt: float = clampf(dt, 0.0, 0.033)
+	if safe_dt > 0.0:
+		var omega: float = TAU * landing_spring_frequency
+		var omega_sq: float = omega * omega
+		var damping_factor: float = 2.0 * landing_spring_damping * omega
+		var accel: float = -omega_sq * (_land_spring_val - 1.0) - damping_factor * _land_spring_vel
+		_land_spring_vel += accel * safe_dt
+		_land_spring_val += _land_spring_vel * safe_dt
+		_land_spring_val = clampf(_land_spring_val, 0.60, 1.40)
+
+	var sy: float = _land_spring_val
+
+	# Aerial velocity-driven elongation (when not on ground)
+	if not is_on_ground:
+		if safe_vel.y < -50.0:
+			# Upward jump launch stretch (vy < -50 in Godot space)
+			var stretch: float = clampf((absf(safe_vel.y) - 50.0) / 1656.25, 0.0, max_jump_stretch - 1.0)
+			sy += stretch
+		elif safe_vel.y > 150.0:
+			# High-speed fall plunge elongation (vy > 150 in Godot space)
+			var stretch: float = clampf((safe_vel.y - 150.0) / 3200.0, 0.0, max_fall_stretch - 1.0)
+			sy += stretch
+
+	var safe_sy: float = clampf(sy, 0.50, 2.0)
+	var sx: float = 1.0 / sqrt(safe_sy)
+	return Vector2(sx, safe_sy)
 
 
 ## Calculates mirrored rest position relative to the hip center (HIP_REST_X) to support facing flip.
@@ -265,13 +400,18 @@ func apply_run_offsets(offsets: Dictionary, speed_ratio: float) -> void:
 	var right_phase: float = safe_phase
 	var left_phase: float = fposmod(safe_phase + 0.5, 1.0)
 
-	offsets[foot_r] = get_foot_offset(right_phase)
-	offsets[foot_l] = get_foot_offset(left_phase)
+	# Dynamic stride scaling based on cadence saturation to prevent sliding
+	var cur_speed: float = speed_ratio * move_speed
+	var cadence_hz: float = 1.8 + 2.0 * tanh(cur_speed / 180.0)
+	var dynamic_stride: float = clampf(cur_speed / maxf(cadence_hz, 0.1), stride_length * 0.4, stride_length)
+
+	offsets[foot_r] = get_foot_offset(right_phase, dynamic_stride)
+	offsets[foot_l] = get_foot_offset(left_phase, dynamic_stride)
 
 	var angle: float = safe_phase * TAU
 	var arm_amount: float = lerpf(0.35, 1.0, speed_ratio)
 
-	# Hands counter-swing against their corresponding feet
+	# Antiphase arm swing counterbalancing legs
 	offsets[arm_r] = Vector2(
 		-cos(angle) * arm_swing * facing,
 		-absf(sin(angle)) * hand_lift
@@ -282,31 +422,46 @@ func apply_run_offsets(offsets: Dictionary, speed_ratio: float) -> void:
 		-absf(sin(angle + PI)) * hand_lift
 	) * arm_amount
 
-	# Two head bounces per complete stride
-	var bounce: float = (0.5 - 0.5 * cos(angle * 2.0)) * head_bounce * speed_ratio
+	# Dual-Frequency Head Bob:
+	# 1. Primary 2x stride frequency vertical ground strike bounce
+	var vert_bounce: float = (0.5 - 0.5 * cos(angle * 2.0)) * head_bounce * speed_ratio
+	# 2. Secondary 1x stride frequency lateral weight-shift pitch
+	var pitch_sway: float = sin(angle) * (head_bounce * 0.35) * speed_ratio
+
+	# Dynamic Torso Lean responding to velocity and horizontal acceleration
+	var vel_ratio: float = clampf(cur_speed / maxf(move_speed, 1.0), 0.0, 1.0)
+	var acc_ratio: float = clampf((_current_accel_x * facing) / maxf(acceleration, 1.0), -1.2, 1.2)
+	var target_lean: float = (head_lean * vel_ratio) + (head_lean * 0.75 * acc_ratio)
+
+	var live_lean: float = target_lean * facing
+	if _torso_lean_spring != null:
+		_torso_lean_spring.snap_to(target_lean * facing)
+		live_lean = _torso_lean_spring.update(0.016)
 
 	offsets[head_target] = Vector2(
-		head_lean * facing * speed_ratio,
-		-bounce
+		live_lean + sin(angle) * 1.5 * facing * speed_ratio,
+		-vert_bounce + pitch_sway
 	)
 
 
-func get_foot_offset(cycle: float) -> Vector2:
+func get_foot_offset(cycle: float, stride_len: float = -1.0) -> Vector2:
 	var safe_cycle: float = clampf(cycle, 0.0, 1.0) if is_finite(cycle) else 0.0
-	var half_stride: float = stride_length * 0.5
+	var eff_stride: float = stride_len if (stride_len > 0.0 and is_finite(stride_len)) else stride_length
+	var half_stride: float = maxf(0.0, eff_stride) * 0.5
 	var x: float = 0.0
 	var y: float = 0.0
 
 	if safe_cycle < 0.5:
-		# Stance: move backward relative to the character
-		var t: float = safe_cycle / 0.5
-		x = lerpf(half_stride, -half_stride, t)
+		# Stance Phase [0.0, 0.5): Foot pinned flat to floor, moves linearly backward
+		var t_stance: float = safe_cycle / 0.5
+		x = lerpf(half_stride, -half_stride, t_stance)
+		y = 0.0
 	else:
-		# Swing: lift the foot and return it to the front
-		var t: float = (safe_cycle - 0.5) / 0.5
-		var eased: float = t * t * (3.0 - 2.0 * t)
+		# Swing Phase [0.5, 1.0): Hermite smoothstep forward, parabolic vertical lift
+		var tau: float = (safe_cycle - 0.5) / 0.5
+		var eased: float = tau * tau * (3.0 - 2.0 * tau) # 3*tau^2 - 2*tau^3
 		x = lerpf(-half_stride, half_stride, eased)
-		y = -sin(t * PI) * foot_lift
+		y = -(4.0 * tau * (1.0 - tau)) * foot_lift # Godot 2D +Y is down, so lift is -Y
 
 	return Vector2(x * facing, y)
 
@@ -338,10 +493,34 @@ func apply_wall_slide_offsets(offsets: Dictionary) -> void:
 func apply_attack_offsets(offsets: Dictionary, stance: String) -> void:
 	if arm_r == null or arm_l == null or head_target == null:
 		return
-	var reach_mult: float = 1.6 if stance == "heavy_slash" else 1.2
-	offsets[arm_r] = Vector2(arm_swing * facing * reach_mult, -hand_lift * 1.5)
-	offsets[arm_l] = Vector2(-arm_swing * facing * 0.5, -hand_lift * 0.5)
-	offsets[head_target] = Vector2(head_lean * facing * 1.2, 2.0)
+
+	var t: float = clampf(_attack_timer / maxf(0.001, _attack_duration), 0.0, 1.0)
+	var is_heavy: bool = (stance == "heavy_slash")
+	var reach_mult: float = 1.6 if is_heavy else 1.2
+
+	if t < 0.15:
+		# Phase 1: Windup Coil (0% -> 15%)
+		var tau1: float = t / 0.15
+		var coil: float = sin(tau1 * PI * 0.5)
+		offsets[arm_r] = Vector2(-arm_swing * facing * 0.4 * coil, hand_lift * 1.2 * coil)
+		offsets[arm_l] = Vector2(arm_swing * facing * 0.2 * coil, hand_lift * 0.4)
+		offsets[head_target] = Vector2(-head_lean * facing * 0.5 * coil, -1.0 * coil)
+	elif t < 0.40:
+		# Phase 2: Snap Strike Explosion (15% -> 40%) - Ease-out exponential
+		var tau2: float = (t - 0.15) / 0.25
+		var strike_ease: float = 1.0 - pow(2.0, -10.0 * tau2)
+		var strike_reach: float = reach_mult * (1.0 + 0.15 * sin(tau2 * PI))
+		offsets[arm_r] = Vector2(arm_swing * facing * strike_reach * strike_ease, -hand_lift * 2.2 * strike_ease)
+		offsets[arm_l] = Vector2(-arm_swing * facing * 0.5 * strike_ease, -hand_lift * 0.8)
+		offsets[head_target] = Vector2(head_lean * facing * 1.4 * strike_ease, 2.5 * strike_ease)
+	else:
+		# Phase 3: Settle & Follow-Through Recovery (40% -> 100%) - Smootherstep
+		var tau3: float = (t - 0.40) / 0.60
+		var settle: float = tau3 * tau3 * tau3 * (tau3 * (tau3 * 6.0 - 15.0) + 10.0)
+		var recoil_x: float = lerpf(arm_swing * facing * reach_mult, arm_swing * facing * 0.8, settle)
+		offsets[arm_r] = Vector2(recoil_x, -hand_lift * lerpf(2.2, 1.0, settle))
+		offsets[arm_l] = Vector2(-arm_swing * facing * 0.3 * (1.0 - settle), -hand_lift * 0.5)
+		offsets[head_target] = Vector2(head_lean * facing * lerpf(1.4, 0.4, settle), lerpf(2.5, 0.0, settle))
 
 
 func apply_parry_offsets(offsets: Dictionary) -> void:
@@ -350,6 +529,45 @@ func apply_parry_offsets(offsets: Dictionary) -> void:
 	offsets[arm_r] = Vector2(15.0 * facing, -hand_lift * 2.5)
 	offsets[arm_l] = Vector2(10.0 * facing, -hand_lift * 2.2)
 	offsets[head_target] = Vector2(-head_lean * facing * 0.3, 0.0)
+
+
+func apply_aim_offsets(offsets: Dictionary, is_sniper: bool = false) -> void:
+	if arm_r == null or arm_l == null:
+		return
+	var reach: float = 38.0 if is_sniper else 28.0
+	offsets[arm_r] = Vector2(facing * reach, -hand_lift * 2.0)
+	offsets[arm_l] = Vector2(facing * (reach * 0.8), -hand_lift * 1.8)
+	if head_target != null:
+		offsets[head_target] = Vector2(facing * (6.0 if is_sniper else 3.0), 2.0 if is_sniper else 0.0)
+
+
+func apply_hitstun_offsets(offsets: Dictionary, is_juggled: bool = false) -> void:
+	if arm_r == null or arm_l == null:
+		return
+	offsets[arm_r] = Vector2(-facing * 16.0, -hand_lift * 3.5)
+	offsets[arm_l] = Vector2(-facing * 12.0, -hand_lift * 3.0)
+	if head_target != null:
+		offsets[head_target] = Vector2(-facing * head_lean * 1.5, -4.0)
+	if is_juggled and foot_r != null and foot_l != null:
+		offsets[foot_r] = Vector2(facing * 8.0, -air_foot_lift * 1.5)
+		offsets[foot_l] = Vector2(-facing * 12.0, -air_foot_lift * 0.8)
+
+
+func apply_archetype_configuration(
+	_archetype_id: String,
+	body_color: Color = Color.WHITE,
+	scale_factor: float = 1.0
+) -> void:
+	_ensure_references()
+	var body_node = get_node_or_null("Rig/Body")
+	if body_node != null:
+		body_node.modulate = body_color
+	elif rig_node != null:
+		rig_node.modulate = body_color
+	else:
+		modulate = body_color
+	if is_finite(scale_factor) and scale_factor > 0.0:
+		scale = Vector2(scale_factor, scale_factor)
 
 
 # ----------------------------------------------------------------------------

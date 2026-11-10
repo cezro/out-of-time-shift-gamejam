@@ -6,6 +6,7 @@ extends SceneTree
 
 const RigSystem = preload("res://scripts/modular_rig/modular_asset_system.gd")
 const McpBridge = preload("res://scripts/tools/asset_mcp_bridge.gd")
+const TimelineSys = preload("res://scripts/timeline/timeline_system.gd")
 
 var _passed: int = 0
 var _failed: int = 0
@@ -21,6 +22,8 @@ func _init() -> void:
 	_test_ragdoll_loadout_splitting()
 	_test_json_manifest_roundtrip_and_mcp_bridge()
 	_test_packed_scene_backend_and_procedural_stickman()
+	_test_m2_motion_dynamics_and_springs()
+	_test_m3_global_coverage()
 
 	print("=== Test Summary: %d passed, %d failed ===" % [_passed, _failed])
 	if _failed > 0:
@@ -444,4 +447,202 @@ func _test_packed_scene_backend_and_procedural_stickman() -> void:
 	_assert(not is_instance_valid(rig_node), "Procedural stickman instance marked invalid after free")
 	var final_orphans: float = Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
 	_assert(final_orphans <= initial_orphans, "Procedural stickman freed without leaking orphan nodes")
+
+
+func _test_m2_motion_dynamics_and_springs() -> void:
+	print("-- Test 8: Milestone 2 Motion Dynamics, Second-Order Springs, and Procedural Gait --")
+
+	# 1. ProceduralSpring harmonic oscillator
+	var spring = RigSystem.ProceduralSpring.new(5.0, 0.75, 0.0)
+	_assert(spring.value == 0.0 and spring.target == 0.0, "Spring starts at 0.0")
+	spring.snap_to(1.0)
+	var max_v: float = 0.0
+	for _i in range(100):
+		var val = spring.update(0.005)
+		if val > max_v:
+			max_v = val
+	_assert(max_v > 1.01 and max_v < 1.06, "Spring exhibits snappy overshoot under zeta=0.75 (got %f)" % max_v)
+	for _i in range(50):
+		spring.update(0.005)
+	_assert(absf(spring.value - 1.0) < 0.01, "Spring settles to target within 2%% band")
+
+	# 2. Cadence saturation curve
+	var f0: float = RigSystem.ProceduralGaitSolver.calculate_cadence(0.0)
+	var f180: float = RigSystem.ProceduralGaitSolver.calculate_cadence(180.0)
+	var f340: float = RigSystem.ProceduralGaitSolver.calculate_cadence(340.0)
+	var f_dash: float = RigSystem.ProceduralGaitSolver.calculate_cadence(1000.0)
+	_assert(is_equal_approx(f0, 1.8), "Idle cadence is 1.8 Hz")
+	_assert(f180 > 3.3 and f180 < 3.35, "Reference run cadence is ~3.32 Hz (got %f)" % f180)
+	_assert(f340 > f180 and f340 < 3.8, "Sprint cadence scales smoothly below 3.8 Hz")
+	_assert(f_dash > f340 and f_dash < 3.8, "Dash cadence asymptotically saturates")
+
+	# 3. Piecewise stance-lock and Hermite foot swing
+	var traj_stance = RigSystem.ProceduralGaitSolver.evaluate_foot_trajectory(PI * 0.4, 14.0, 6.0)
+	_assert(is_equal_approx(traj_stance.y, 0.0), "Foot is pinned flat on floor during stance phase")
+	var traj_swing = RigSystem.ProceduralGaitSolver.evaluate_foot_trajectory(PI * 1.5, 14.0, 6.0)
+	_assert(is_equal_approx(traj_swing.y, 6.0), "Foot reaches peak step height at mid-swing")
+
+	# 4. Inverted pendulum pelvic bobbing at 2x stride frequency
+	var p_strike = RigSystem.StickmanPoseSolver.generate_stickman_pose(
+		Vector2.ZERO, 1.0, Vector2(180.0, 0.0), true, 0.0, false, 0.0, false, "normal"
+	)
+	var p_mid = RigSystem.StickmanPoseSolver.generate_stickman_pose(
+		Vector2.ZERO, 1.0, Vector2(180.0, 0.0), true, 0.075, false, 0.0, false, "normal"
+	)
+	_assert(p_mid.pelvis.y > p_strike.pelvis.y, "Pelvis vaults upward during mid-stance (mid=%f > strike=%f)" % [p_mid.pelvis.y, p_strike.pelvis.y])
+
+	# 5. Dynamic acceleration-proportional torso lean
+	var p_cruise = RigSystem.StickmanPoseSolver.generate_stickman_pose(
+		Vector2.ZERO, 1.0, Vector2(200.0, 0.0), true, 0.2, false, 0.0, false, "normal", 0.0
+	)
+	var p_accel = RigSystem.StickmanPoseSolver.generate_stickman_pose(
+		Vector2.ZERO, 1.0, Vector2(200.0, 0.0), true, 0.2, false, 0.0, false, "normal", 2200.0
+	)
+	var p_brake = RigSystem.StickmanPoseSolver.generate_stickman_pose(
+		Vector2.ZERO, 1.0, Vector2(200.0, 0.0), true, 0.2, false, 0.0, false, "normal", -2800.0
+	)
+	_assert(p_accel.neck.x > p_cruise.neck.x, "Forward acceleration leans torso forward further than cruise")
+	_assert(p_brake.neck.x < p_cruise.neck.x, "Braking pitches torso backward to brace against deceleration")
+
+	# 6. Volume-conserving squash & stretch
+	var sq = RigSystem.StickmanPoseSolver.volume_conserving_scale(1.32)
+	_assert(is_equal_approx(sq.x * sq.x * sq.y, 1.0), "Volume Sx^2 * Sy is strictly conserved")
+
+	# 7. Three-phase combat slash
+	var p1 = RigSystem.StickmanPoseSolver.calculate_combat_slash(0.95, 1.0, false)
+	var p2 = RigSystem.StickmanPoseSolver.calculate_combat_slash(0.70, 1.0, false)
+	var p3 = RigSystem.StickmanPoseSolver.calculate_combat_slash(0.0, 1.0, false)
+	_assert(p1["blade_stretch"] < 1.0, "Phase 1 anticipation coil contracts blade")
+	_assert(p2["blade_stretch"] > 1.05, "Phase 2 snap strike elongates blade")
+	_assert(is_equal_approx(p3["blade_stretch"], 1.0), "Phase 3 settle recovers blade length")
+
+	# 8. Scarf distance constraint clamping
+	var p_run = RigSystem.StickmanPoseSolver.generate_stickman_pose(
+		Vector2.ZERO, 1.0, Vector2(240.0, 0.0), true, 0.3, false, 0.0, false, "normal"
+	)
+	var d01: float = p_run.scarf_nodes[0].distance_to(p_run.scarf_nodes[1])
+	var d12: float = p_run.scarf_nodes[1].distance_to(p_run.scarf_nodes[2])
+	_assert(d01 >= 5.9 and d01 <= 14.1, "Scarf segment 0-1 clamped in [6, 14] px")
+	_assert(d12 >= 5.9 and d12 <= 14.1, "Scarf segment 1-2 clamped in [6, 14] px")
+	_assert(p_run.scarf_nodes[2].x < p_run.head_center.x, "Scarf trails behind head")
+
+
+func _test_m3_global_coverage() -> void:
+	print("-- Test 9: Milestone 3 Global Coverage (Player Rig, Clones/Echoes, Enemy Archetypes, Ragdoll Pieces) --")
+	var registry := RigSystem.ModularAssetRegistry.new()
+
+	# 1. Feature 7 & 9: player_default alias and procedural rig scene paths
+	var def_lo := registry.get_loadout("player_default")
+	_assert(def_lo != null, "player_default loadout is registered in ModularAssetRegistry")
+	_assert(def_lo.rig_scene_path == RigSystem.ModularAssetRegistry.PROCEDURAL_STICKMAN_SCENE_PATH, "player_default has procedural stickman rig path")
+	var staff_lo := registry.get_loadout("player_shift_staff")
+	_assert(staff_lo != null, "player_shift_staff loadout is registered")
+	_assert(def_lo.parts.size() == staff_lo.parts.size(), "player_default part count matches player_shift_staff")
+
+	var all_archetypes: Array[String] = [
+		"enemy_runner",
+		"enemy_ninja",
+		"enemy_heavy",
+		"enemy_gunner_semi",
+		"enemy_gunner_auto",
+		"enemy_sniper",
+		"player_shift_staff",
+		"player_default",
+		"player_procedural_stickman"
+	]
+	for arch in all_archetypes:
+		var path: String = registry.get_rig_scene_path(arch)
+		_assert(path == RigSystem.ModularAssetRegistry.PROCEDURAL_STICKMAN_SCENE_PATH, "Archetype '%s' wires to PROCEDURAL_STICKMAN_SCENE_PATH" % arch)
+		var lo := registry.get_loadout(arch)
+		_assert(lo != null, "Loadout for '%s' exists" % arch)
+		if arch == "player_procedural_stickman":
+			_assert(lo.parts.size() >= 1, "Loadout '%s' has rig scene part" % arch)
+		else:
+			_assert(lo.parts.size() >= 5, "Loadout '%s' has anatomical body parts" % arch)
+
+	# 2. Feature 7: Persistent dynamics context and acceleration lean
+	var dyn_ctx := RigSystem.PoseDynamicsContext.new()
+	var p_accel := RigSystem.StickmanPoseSolver.generate_stickman_pose(
+		Vector2.ZERO, 1.0, Vector2(250.0, 0.0), true, 0.1, false, 0.0, false, "normal", 2400.0, dyn_ctx, 0.016
+	)
+	_assert(p_accel.neck.x > 3.0, "Forward acceleration drives neck forward")
+	_assert(dyn_ctx.prev_velocity.x == 250.0, "Dynamics context stores previous velocity")
+	_assert(p_accel.scarf_nodes.size() == 3, "Scarf nodes present in dynamics pose")
+
+	# 3. Feature 8: ChronoEchoData fields and fade ratio
+	var timeline := TimelineSys.TimelineState.new()
+	timeline.spawn_chrono_echo(
+		Vector2(100.0, 50.0),
+		Vector2(1.0, 0.0),
+		TimelineSys.TimelineEra.PAST,
+		"dash",
+		95.0,
+		3.0,
+		1.0,
+		Vector2(320.0, 0.0),
+		true,
+		"jump",
+		0.25,
+		"player_shift_staff"
+	)
+	_assert(timeline.echoes.size() == 1, "Echo was spawned into timeline")
+	var echo: TimelineSys.ChronoEchoData = timeline.echoes[0]
+	_assert(echo.facing == 1.0, "Echo preserves facing")
+	_assert(echo.velocity == Vector2(320.0, 0.0), "Echo preserves velocity")
+	_assert(echo.is_grounded == true, "Echo preserves grounded flag")
+	_assert(echo.stance == "jump", "Echo preserves stance")
+	_assert(is_equal_approx(echo.anim_time, 0.25), "Echo preserves anim_time")
+	_assert(echo.loadout_id == "player_shift_staff", "Echo preserves loadout_id")
+	_assert(is_equal_approx(echo.fade_ratio(), 1.0), "Echo starts with 1.0 fade ratio")
+	timeline.tick(1.5)
+	_assert(echo.fade_ratio() < 0.6 and echo.fade_ratio() > 0.4, "Echo fades to ~0.5 after half lifetime")
+
+	# 4. Feature 8 & 9: Jump stance pose generation
+	var jump_pose := RigSystem.StickmanPoseSolver.generate_stickman_pose(
+		Vector2(50.0, 100.0), 1.0, Vector2(100.0, -150.0), false, 0.1, false, 0.0, false, "jump"
+	)
+	_assert(jump_pose.left_knee.is_finite() and jump_pose.right_knee.is_finite(), "Jump stance knees are finite")
+	_assert(jump_pose.left_foot.is_finite() and jump_pose.right_foot.is_finite(), "Jump stance feet are finite")
+
+	# 5. Feature 10: Procedural Ragdoll Pose Solver (Upper and Lower tumbling pieces)
+	var r_upper := RigSystem.StickmanPoseSolver.generate_ragdoll_pose(
+		Vector2(200.0, 100.0), 0.785, 1.0, 0, "enemy_heavy"
+	)
+	_assert(r_upper.head_center.is_finite(), "Upper ragdoll head_center is finite")
+	_assert(r_upper.pelvis.is_finite(), "Upper ragdoll pelvis is finite")
+	_assert(r_upper.left_hand.is_finite() and r_upper.sword_tip.is_finite(), "Upper ragdoll carries arms and weapon")
+
+	var r_lower := RigSystem.StickmanPoseSolver.generate_ragdoll_pose(
+		Vector2(200.0, 100.0), -1.2, 1.0, 1, "enemy_heavy"
+	)
+	_assert(r_lower.left_foot.is_finite() and r_lower.right_foot.is_finite(), "Lower ragdoll carries feet and hips")
+
+	var helm_xform := RigSystem.StickmanPoseSolver.compute_slot_transform(r_upper, RigSystem.PartSlot.HAT_HELMET, 1.0)
+	_assert((helm_xform["center"] as Vector2).is_finite(), "Upper ragdoll hat/helmet transform is finite and tracks tumbling head")
+	var foot_xform := RigSystem.StickmanPoseSolver.compute_slot_transform(r_lower, RigSystem.PartSlot.FOOT_L, 1.0)
+	_assert((foot_xform["center"] as Vector2).is_finite(), "Lower ragdoll foot transform is finite and tracks tumbling leg")
+
+	# 6. StickmanProcedural runtime API extensions (archetype configuration, aim, hitstun)
+	var rig_packed: PackedScene = load(RigSystem.ModularAssetRegistry.PROCEDURAL_STICKMAN_SCENE_PATH)
+	_assert(rig_packed != null, "PROCEDURAL_STICKMAN_SCENE_PATH loads successfully")
+	var rig_inst = rig_packed.instantiate()
+	var root := get_root()
+	root.add_child(rig_inst)
+	_assert(rig_inst.has_method("apply_archetype_configuration"), "Rig has apply_archetype_configuration")
+	_assert(rig_inst.has_method("apply_aim_offsets"), "Rig has apply_aim_offsets")
+	_assert(rig_inst.has_method("apply_hitstun_offsets"), "Rig has apply_hitstun_offsets")
+
+	rig_inst.call("apply_archetype_configuration", "heavy", Color(0.9, 0.2, 0.2, 1.0), 1.35)
+	var aim_offsets := {}
+	rig_inst.call("apply_aim_offsets", aim_offsets, false)
+	_assert(not aim_offsets.is_empty(), "apply_aim_offsets populated IK offsets")
+
+	var hit_offsets := {}
+	rig_inst.call("apply_hitstun_offsets", hit_offsets, true)
+	_assert(not hit_offsets.is_empty(), "apply_hitstun_offsets populated IK offsets")
+
+	root.remove_child(rig_inst)
+	rig_inst.free()
+
+
 

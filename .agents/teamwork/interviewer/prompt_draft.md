@@ -1,24 +1,32 @@
-Investigate and resolve all console and editor errors and warnings in the Godot project, utilizing the Godot MCP tooling to inspect and verify the fixes.
+Use sonnet as the implementors. Fix the animations and death sprites for stickmen so they match the visual style of https://www.youtube.com/watch?v=34NfuVCrfok&pp=ygUKb25lIHZzIGFsbA%3D%3D, adopting the style without copying the moves.
 
 Working directory: c:\Users\Zero\Documents\GitHub Repositories\out-of-time-shift-gamejam\new-game-project
 Integrity mode: development
 
-## Context
-- Godot Engine Executable: `D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe`
-- Godot MCP Tooling: `c:\Users\Zero\Documents\GitHub Repositories\out-of-time-shift-gamejam\tools\godot-mcp`
-- Project: `new-game-project` (Godot 4.7)
+Reference:
+- Visual style reference: https://www.youtube.com/watch?v=34NfuVCrfok&pp=ygUKb25lIHZzIGFsbA%3D%3D
 
 ## Requirements
 
-### R1. Resolve Console and Editor Errors
-Investigate, diagnose, and fix all errors and warnings reported in the Godot console and editor during project load, scene execution, and script compilation.
+### R1. Stickman Character Animation Style
+Fix character animations across player, echoes, and enemy archetypes to display clean, readable, fluid stick-figure motion matching the reference video style, without copying the specific moves. Characters must have distinct color tints or accents per archetype (player, echoes, and enemy types) on clean, solid stick-figure silhouettes rather than blurred or smeared sprite clusters.
 
-### R2. Godot MCP Integration
-Use the Godot MCP tooling located at `c:\Users\Zero\Documents\GitHub Repositories\out-of-time-shift-gamejam\tools\godot-mcp` alongside the Godot Engine executable (`D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe`) to inspect the project state, capture console output, and verify that issues are resolved.
+### R2. Death Visuals and Dismemberment
+Fix character death sprites and ragdoll remains so that character defeat triggers procedural dismemberment into clean, detached stick-figure parts with physics and ragdoll momentum, remaining clearly readable as stick-figure segments matching the reference style rather than thin fragmented debris.
+
+### R3. Test Suite Preservation
+Maintain full compatibility with the existing project test suite so that all existing tests pass without regressions.
 
 ## Acceptance Criteria
 
-### Console and Editor Health
-- [ ] The project opens in Godot without any script parse errors, missing dependency errors, or invalid resource warnings.
-- [ ] Running the project and its scenes produces clean console output with zero errors and zero warnings logged.
-- [ ] Godot MCP inspection confirms that scene trees and scripts load without active error reports.
+### Visual Style and Animation
+- [ ] Live stickman characters render with clean, readable stick-figure silhouettes with distinct archetype color tints or accents.
+- [ ] Character animations (idle, movement, attacks, reactions) are fluid, snappy, and visually readable without sprite smearing or visual artifacts.
+
+### Death Visuals
+- [ ] Defeated characters dismember into clean, detached stick-figure body segments (head, torso, limbs) that tumble with readable physics and momentum.
+- [ ] Death remains and ragdoll pieces maintain recognizable stick-figure proportions and styling rather than scattered line debris.
+
+### Verification and Regression
+- [ ] Running `run_tests.bat` passes all test suites (including all 393 existing assertions) with zero failures.
+- [ ] The visual animations and death effects run and render cleanly in the Godot test scene `res://scenes/test_procedural_stickmen.tscn`.

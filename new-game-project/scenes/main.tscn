@@ -1,6 +1,11 @@
-[gd_scene load_steps=2 format=3 uid="uid://cq6bj1igfs42f"]
+[gd_scene load_steps=3 format=3 uid="uid://cq6bj1igfs42f"]
 
 [ext_resource type="Script" uid="uid://ehegx2l4nndh" path="res://scripts/game/game_controller.gd" id="1_game_controller"]
+[ext_resource type="PackedScene" uid="uid://cbnjutyqjv0ek" path="res://scenes/stickman/stickmanprocedural.tscn" id="2_stickman"]
 
 [node name="GameController" type="Node2D"]
 script = ExtResource("1_game_controller")
+
+[node name="Player" parent="." instance=ExtResource("2_stickman")]
+position = Vector2(0, 221)
+scale = Vector2(0.12, 0.12)

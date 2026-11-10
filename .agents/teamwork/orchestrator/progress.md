@@ -1,20 +1,18 @@
 # Orchestrator Progress
 
-Last visited: 2026-11-10T14:26:40Z
+Last visited: 2026-11-10T17:14:30Z
 
 ## Current Status
-- [x] Phase 0: Initial Scope Survey (3 Explorers) - COMPLETED
-- [x] Phase 1: PROJECT.md Decomposition & Feature Inventory - COMPLETED
-- [/] Phase 2: Milestone Execution
-  - [x] Milestone 1: Procedural Rig & Scene Asset Integration - COMPLETED & GATE PASSED
-  - [/] Milestone 2: Snappy Motion Dynamics & Procedural Solver Upgrade - IN PROGRESS (Iteration 1: Explorers Dispatched)
-    - [x] Dispatched M2 Explorer 1 (`11da234e-787e-44f9-b6ba-bfeb22704be5`): Procedural Gait & Stance-Lock Integration Strategy — Active
-    - [x] Dispatched M2 Explorer 2 (`00e3b013-a0f8-4d25-a2b4-8bb099b2474d`): Spring Dynamics & Recoil Strategy — Active
-    - [x] Dispatched M2 Explorer 3 (`5d9fffba-9ba3-4b1e-a260-100c22cc8d31`): Squash/Stretch & Combat Arc Strategy — Active
-  - [ ] Milestone 3: Global Coverage Across All Stickman Entities - PENDING
-  - [ ] Milestone 4: Dedicated Test Scene & Automated Regression Suite - PENDING
-- [ ] Phase 3: Final Verification & Audit Clearance
+- [x] Phase 0: Initial M1-M3 Procedural Integration & Regression Baseline (393 assertions passing) - COMPLETED
+- [/] Visual Style & Dismemberment Upgrade (Reference: "One vs All" https://www.youtube.com/watch?v=34NfuVCrfok)
+  - [/] Phase 0: 3 Explorers Survey & Investigation (In-Progress, all 3 active)
+    - [/] Explorer 1 (`5b97ec3c-e9d7-4d4e-8d41-1c5e53ae8ed7`): Live stickman rendering & clean silhouette architecture (inspecting game_controller.gd and stickmanprocedural)
+    - [/] Explorer 2 (`3385f464-6845-422f-b6cd-a2508d409493`): Death visuals, dismemberment & tumbling body parts physics (inspecting ragdoll pieces and defeat triggers)
+    - [/] Explorer 3 (`9c5973c3-3566-4cbf-810f-5ec67b5a574e`): Animation quality, showcase test scene & 393 test suite preservation (mapping test invariants and assertions)
+  - [ ] Phase 1: Implementation (Sonnet worker)
+  - [ ] Phase 2: Verification Gate (Reviewers, Challengers, Forensic Auditor)
+  - [ ] Phase 3: Final Test Suite & Visual Showcase Sign-Off
 
 ## Iteration Status
-Current iteration: 3 / 32
-Heartbeat task: 0fd925e9-f058-4fd8-8532-3aab95b2a4f6/task-323
+Current iteration: 1 / 32
+Heartbeat tick 1 completed: all 3 subagents healthy and progressing.

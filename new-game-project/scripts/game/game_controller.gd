@@ -110,6 +110,16 @@ var _runtime_badge_texture: Texture2D = null
 var draw_call_count: int = 0
 var last_draw_primitive_count: int = 0
 var _can_issue_canvas_draws: bool = false
+var ghost_distance_accum: float = 0.0
+var ghost_last_pos: Vector2 = Vector2.ZERO
+var player_dynamics_ctx: ModularAssetSystem.PoseDynamicsContext = ModularAssetSystem.PoseDynamicsContext.new()
+var player_prev_vx: float = 0.0
+var player_accel_x: float = 0.0
+var player_dt_last: float = 0.016
+var player_rig: StickmanProcedural = null
+var _echo_rig_pool: Array = []
+var _enemy_rig_pool: Array = []
+const MAX_ECHO_RIGS: int = 4
 
 # Hardware input accumulators for live _process loop
 var _hw_mouse_drag: Vector2 = Vector2.ZERO
@@ -197,6 +207,155 @@ func _ensure_scene_nodes() -> void:
 
 	if hud_layer == null:
 		_build_hud()
+
+	_ensure_player_rig()
+	_init_echo_rig_pool()
+
+
+func _ensure_player_rig() -> void:
+	if player_rig == null and is_inside_tree():
+		player_rig = get_node_or_null("Player") as StickmanProcedural
+		if player_rig == null:
+			var rig_node = asset_registry.instantiate_rig("player_procedural_stickman")
+			if rig_node is CharacterBody2D:
+				player_rig = rig_node as StickmanProcedural
+				player_rig.name = "Player"
+				add_child(player_rig)
+		if player_rig != null:
+			player_rig.autonomous_physics = false
+			player_rig.visible = true
+			player_rig.scale = Vector2(0.12, 0.12)
+			player_rig.z_index = 5
+
+
+func _init_echo_rig_pool() -> void:
+	if not _echo_rig_pool.is_empty() or not is_inside_tree():
+		return
+	for i in range(MAX_ECHO_RIGS):
+		var rig_node = asset_registry.instantiate_rig("player_procedural_stickman")
+		if rig_node is CharacterBody2D:
+			var sp := rig_node as StickmanProcedural
+			sp.autonomous_physics = false
+			sp.visible = false
+			sp.scale = Vector2(0.12, 0.12)
+			sp.z_index = 4
+			sp.name = "EchoRig_%d" % i
+			add_child(sp)
+			_echo_rig_pool.append(sp)
+
+
+func _update_echo_rigs(real_dt: float) -> void:
+	if _echo_rig_pool.is_empty() or not is_inside_tree():
+		return
+	var active_echoes: Array = timeline.echoes
+	for i in range(_echo_rig_pool.size()):
+		var rig = _echo_rig_pool[i]
+		if rig is StickmanProcedural:
+			var sp: StickmanProcedural = rig as StickmanProcedural
+			if i < active_echoes.size():
+				var echo: TimelineSystem.ChronoEchoData = active_echoes[i]
+				var e_alpha: float = 0.75 if echo.era == timeline.current_era else 0.30
+				sp.visible = true
+				sp.global_position = to_screen(echo.origin) + Vector2(0.0, -38.4)
+				sp.scale = Vector2(0.12, 0.12)
+				sp.facing = echo.facing
+				sp.modulate = Color(0.2, 0.95, 1.0, e_alpha)
+				var godot_vel := Vector2(echo.velocity.x, -echo.velocity.y)
+				sp.update_procedural_animation(godot_vel, echo.is_grounded, echo.facing, echo.stance, real_dt)
+			else:
+				sp.visible = false
+
+
+func _ensure_enemy_rig_pool(count: int) -> void:
+	if not is_inside_tree():
+		return
+	while _enemy_rig_pool.size() < count:
+		var rig_node = asset_registry.instantiate_rig("player_procedural_stickman")
+		if rig_node is CharacterBody2D:
+			var erig := rig_node as StickmanProcedural
+			erig.autonomous_physics = false
+			erig.visible = false
+			erig.scale = Vector2(0.12, 0.12)
+			erig.z_index = 4
+			erig.name = "EnemyRig_%d" % _enemy_rig_pool.size()
+			add_child(erig)
+			_enemy_rig_pool.append(erig)
+		else:
+			break
+
+
+func _update_enemy_rigs(dt: float) -> void:
+	if not is_inside_tree():
+		return
+	_ensure_enemy_rig_pool(enemies.size())
+	for i in range(_enemy_rig_pool.size()):
+		var rig = _enemy_rig_pool[i]
+		if not (rig is StickmanProcedural):
+			continue
+		var erig := rig as StickmanProcedural
+		if i < enemies.size():
+			var enemy: EnemyAI.EnemyData = enemies[i]
+			if enemy == null:
+				erig.visible = false
+				continue
+			var is_active_era: bool = (enemy.era == timeline.current_era or timeline.mode == TimelineSystem.GameMode.CAMPAIGN_TRAVERSAL)
+			var e_alpha: float = 1.0 if is_active_era else 0.28
+			erig.visible = true
+			erig.global_position = to_screen(enemy.position) + Vector2(0.0, -38.4)
+			var base_scale: float = 0.15 if enemy.enemy_type == EnemyAI.EnemyType.HEAVY else 0.12
+			erig.scale = Vector2(base_scale, base_scale)
+			erig.facing = enemy.facing
+
+			match enemy.enemy_type:
+				EnemyAI.EnemyType.RUNNER:
+					erig.modulate = Color(1.0, 0.35, 0.35, e_alpha)
+				EnemyAI.EnemyType.NINJA:
+					erig.modulate = Color(0.75, 0.25, 0.95, e_alpha)
+				EnemyAI.EnemyType.HEAVY:
+					erig.modulate = Color(1.0, 0.55, 0.15, e_alpha)
+				EnemyAI.EnemyType.GUNNER_SEMI:
+					erig.modulate = Color(0.25, 1.0, 0.55, e_alpha)
+				EnemyAI.EnemyType.GUNNER_AUTO:
+					erig.modulate = Color(1.0, 0.85, 0.2, e_alpha)
+				EnemyAI.EnemyType.SNIPER:
+					erig.modulate = Color(0.2, 0.75, 1.0, e_alpha)
+				_:
+					erig.modulate = Color(1.0, 0.4, 0.4, e_alpha)
+
+			var e_state := "idle"
+			if enemy.state == EnemyAI.StateKind.ATTACK:
+				e_state = "heavy_slash" if enemy.enemy_type == EnemyAI.EnemyType.HEAVY else "slash"
+			elif enemy.state == EnemyAI.StateKind.WINDUP:
+				e_state = "parry_guard"
+			elif not enemy.is_grounded:
+				e_state = "jump"
+			elif absf(enemy.velocity.x) > 10.0:
+				e_state = "run"
+
+			var godot_vel := Vector2(enemy.velocity.x, -enemy.velocity.y)
+			erig.update_procedural_animation(godot_vel, enemy.is_grounded, enemy.facing, e_state, dt)
+		else:
+			erig.visible = false
+
+
+func _resolve_player_anim_state() -> String:
+	if player.parry_timer > 0.0:
+		return "parry_guard"
+	if attack_anim_timer > 0.0:
+		if last_stance == "heavy_slash":
+			return "heavy_slash"
+		return "slash"
+	if player.is_slamming:
+		return "downward_slam"
+	if player.is_wall_sliding:
+		return "wall_slide"
+	if player.is_climbing_vine:
+		return "air"
+	if not player.is_grounded:
+		return "jump" if player.velocity.y > 0.0 else "fall"
+	if player.dash_timer > 0.0 or absf(player.velocity.x) > 15.0:
+		return "run"
+	return "idle"
 
 
 func _build_hud() -> void:
@@ -891,6 +1050,8 @@ func step_simulation(real_dt: float, input_override: Dictionary = {}) -> void:
 		if PlayerKinematics.start_dash(player, move_x):
 			audio_mgr.play_sfx("dash")
 			ghost_spawn_timer = 0.03
+			ghost_distance_accum = 0.0
+			ghost_last_pos = player.position
 			ghost_trails.append(GhostTrailData.new(
 				player.position,
 				player.facing,
@@ -907,7 +1068,15 @@ func step_simulation(real_dt: float, input_override: Dictionary = {}) -> void:
 				player.position + Vector2(0.0, 16.0),
 				player.dash_dir,
 				timeline.current_era,
-				"dash"
+				"dash",
+				95.0,
+				3.0,
+				player.facing,
+				player.velocity,
+				player.is_grounded,
+				"normal",
+				anim_time,
+				player.loadout_id
 			)
 
 	# 5c. Heavy Launcher Attack (RMB / K)
@@ -937,6 +1106,8 @@ func step_simulation(real_dt: float, input_override: Dictionary = {}) -> void:
 	# 7. Step World Entities (WaveManager, Enemies, Bullets, Ragdolls, Particles, Visuals)
 	var updated_world_dt: float = chrono.get_world_dt(dt)
 	_step_world_entities(dt, updated_world_dt, effective_aim)
+	_update_echo_rigs(dt)
+	_update_enemy_rigs(updated_world_dt)
 
 	# 8. Update Camera & HUD and request redraw
 	_update_camera(dt)
@@ -985,7 +1156,20 @@ func _execute_light_slash(aim_world: Vector2) -> void:
 	arc_vis.color = Color(0.2, 0.95, 1.0, 1.0)
 	slash_visuals.append(arc_vis)
 
-	timeline.spawn_chrono_echo(origin, aim_dir, timeline.current_era, "slash")
+	timeline.spawn_chrono_echo(
+		origin,
+		aim_dir,
+		timeline.current_era,
+		"slash",
+		95.0,
+		3.0,
+		player.facing,
+		player.velocity,
+		player.is_grounded,
+		last_stance,
+		anim_time,
+		player.loadout_id
+	)
 	audio_mgr.play_sfx("slash")
 	last_stance = "normal"
 	attack_anim_timer = 0.18
@@ -1025,7 +1209,20 @@ func _execute_heavy_launcher(aim_world: Vector2) -> void:
 	vis.color = Color(1.0, 0.72, 0.18, 1.0)
 	slash_visuals.append(vis)
 
-	timeline.spawn_chrono_echo(origin, aim_dir, timeline.current_era, "heavy")
+	timeline.spawn_chrono_echo(
+		origin,
+		aim_dir,
+		timeline.current_era,
+		"heavy",
+		95.0,
+		3.0,
+		player.facing,
+		player.velocity,
+		player.is_grounded,
+		"heavy_slash",
+		anim_time,
+		player.loadout_id
+	)
 	last_stance = "heavy_slash"
 	attack_anim_timer = 0.24
 	attack_anim_duration = 0.24
@@ -1146,7 +1343,20 @@ func _execute_chrono_warp(aim_world: Vector2) -> void:
 	var warp_dir: Vector2 = (end_pos - start_pos).normalized()
 	if warp_dir.length_squared() < 1e-4:
 		warp_dir = Vector2(player.facing, 0.0)
-	timeline.spawn_chrono_echo(end_pos + Vector2(0.0, 16.0), warp_dir, timeline.current_era, "warp")
+	timeline.spawn_chrono_echo(
+		end_pos + Vector2(0.0, 16.0),
+		warp_dir,
+		timeline.current_era,
+		"warp",
+		95.0,
+		3.0,
+		player.facing,
+		player.velocity,
+		player.is_grounded,
+		last_stance,
+		anim_time,
+		player.loadout_id
+	)
 	audio_mgr.play_sfx("warp")
 
 	var slice_events: Array = warp_res.get("slice_events", [])
@@ -1215,8 +1425,11 @@ func _step_player_movement_and_environment(
 	if player.dash_timer > 0.0:
 		player.dash_timer = maxf(0.0, player.dash_timer - player_dt)
 		player.velocity = player.dash_dir * player.config.dash_speed
+		ghost_distance_accum += (player.position - ghost_last_pos).length()
+		ghost_last_pos = player.position
 		ghost_spawn_timer -= player_dt
-		if ghost_spawn_timer <= 0.0:
+		if ghost_distance_accum >= 32.0 or (ghost_spawn_timer <= 0.0 and ghost_distance_accum >= 16.0):
+			ghost_distance_accum = 0.0
 			ghost_spawn_timer = 0.04
 			ghost_trails.append(GhostTrailData.new(
 				player.position,
@@ -1356,6 +1569,25 @@ func _step_player_movement_and_environment(
 		combo.score += 500
 		combo.style_points = minf(100.0, combo.style_points + 15.0)
 		audio_mgr.play_sfx("warp", 1.4)
+
+	# Acceleration & procedural rig dynamics
+	if player_dt > 0.0001:
+		player_accel_x = clampf((player.velocity.x - player_prev_vx) / player_dt, -3500.0, 3500.0)
+	else:
+		player_accel_x = 0.0
+	player_prev_vx = player.velocity.x
+	player_dt_last = player_dt
+
+	if player_rig != null:
+		var godot_vel := Vector2(player.velocity.x, -player.velocity.y)
+		player_rig.global_position = to_screen(player.position) + Vector2(0.0, -38.4)
+		player_rig.update_procedural_animation(
+			godot_vel,
+			player.is_grounded,
+			player.facing,
+			_resolve_player_anim_state(),
+			player_dt
+		)
 
 
 func _trigger_slam_landing_shockwave() -> void:
@@ -1880,15 +2112,36 @@ func _draw() -> void:
 		_d_rect(Rect2(p_scr.x, p_scr.y, plat.width(), plat.thickness), plat_col, true)
 		_d_line(p_scr, p_scr + Vector2(plat.width(), 0.0), accent_col, 2.5)
 
-	# 5. Chrono-Echoes
-	for echo in timeline.echoes:
+	# 5. Chrono-Echoes (Modular stickman pose with era-colored tint and fading alpha)
+	for echo_i in range(timeline.echoes.size()):
+		var echo: TimelineSystem.ChronoEchoData = timeline.echoes[echo_i]
 		if echo == null:
 			continue
-		var e_alpha: float = 0.75 if echo.era == timeline.current_era else 0.30
+		var echo_era_palette: Dictionary = timeline.get_era_palette(echo.era)
+		var echo_accent: Color = echo_era_palette.get("accent_color", Color(0.25, 0.90, 1.0, 1.0))
+		var base_alpha: float = 0.85 if echo.era == timeline.current_era else 0.35
+		var echo_fade: float = echo.fade_ratio() if echo.has_method("fade_ratio") else clampf(echo.timer / maxf(0.001, echo.max_timer), 0.0, 1.0)
+		var echo_alpha: float = base_alpha * echo_fade
+		var echo_tint := Color(echo_accent.r, echo_accent.g, echo_accent.b, echo_alpha)
+
+		var echo_pose := ModularAssetSystem.StickmanPoseSolver.generate_stickman_pose(
+			echo.origin,
+			echo.facing,
+			echo.velocity,
+			echo.is_grounded,
+			echo.anim_time,
+			echo.is_attacking,
+			echo.attack_progress,
+			false,
+			echo.stance
+		)
+		var echo_rig_active: bool = (_echo_rig_pool.size() > echo_i and _echo_rig_pool[echo_i] != null and _echo_rig_pool[echo_i].visible)
+		_draw_modular_character(echo_pose, echo.loadout_id, echo.facing, 0.0, echo_alpha, echo_tint, echo_rig_active)
+
 		var e_scr: Vector2 = to_screen(echo.origin)
-		_d_arc(e_scr, echo.radius * 0.35, 0.0, TAU, 24, Color(0.2, 0.95, 1.0, e_alpha), 2.0)
 		var dir_scr := Vector2(echo.aim_dir.x, -echo.aim_dir.y)
-		_d_line(e_scr - dir_scr * 18.0, e_scr + dir_scr * 24.0, Color(0.95, 0.82, 0.3, e_alpha), 2.5)
+		if dir_scr.length_squared() > 0.01:
+			_d_line(e_scr, e_scr + dir_scr * 24.0, Color(echo_accent.r, echo_accent.g, echo_accent.b, echo_alpha * 0.85), 2.2)
 
 	# 6. Ghost Trails
 	for ghost in ghost_trails:
@@ -1907,10 +2160,25 @@ func _draw() -> void:
 			ghost.stance
 		)
 		var g_col := Color(ghost.color.r, ghost.color.g, ghost.color.b, ghost.color.a * g_ratio)
-		_draw_pose_skeleton(g_pose, g_col, 2.0)
+		_draw_modular_character(g_pose, ghost.loadout_id, ghost.facing, 0.0, g_ratio * 0.75, g_col)
+		if absf(ghost.velocity.x) > 400.0:
+			var ca_col := Color(1.0, 0.25, 0.55, g_col.a * 0.45)
+			var ca_pose := ModularAssetSystem.StickmanPoseSolver.generate_stickman_pose(
+				ghost.position - Vector2(ghost.facing * 5.0, 0.0),
+				ghost.facing,
+				ghost.velocity,
+				ghost.is_grounded,
+				ghost.anim_time,
+				ghost.is_attacking,
+				ghost.attack_progress,
+				false,
+				ghost.stance
+			)
+			_draw_pose_skeleton(ca_pose, ca_col, 1.8)
 
 	# 7. Enemies (active era = full alpha; inactive era = glowing translucent shadow alpha = 0.28)
-	for enemy in enemies:
+	for enemy_idx in range(enemies.size()):
+		var enemy: EnemyAI.EnemyData = enemies[enemy_idx]
 		if enemy == null:
 			continue
 		var e_alpha: float = 1.0 if enemy.era == timeline.current_era else 0.28
@@ -1920,6 +2188,27 @@ func _draw() -> void:
 			if e_attacking
 			else 0.0
 		)
+		var e_stance: String = "normal"
+		if not enemy.is_grounded or enemy.state == EnemyAI.StateKind.JUGGLED:
+			if enemy.velocity.y < -100.0 and enemy.enemy_type == EnemyAI.EnemyType.NINJA:
+				e_stance = "downward_slam"
+			else:
+				e_stance = "jump"
+		elif enemy.state == EnemyAI.StateKind.WINDUP:
+			if enemy.enemy_type == EnemyAI.EnemyType.HEAVY or enemy.enemy_type == EnemyAI.EnemyType.RUNNER:
+				e_stance = "heavy_slash"
+			else:
+				e_stance = "parry_guard"
+		elif enemy.state == EnemyAI.StateKind.ATTACK:
+			if enemy.enemy_type == EnemyAI.EnemyType.HEAVY:
+				e_stance = "heavy_slash"
+			elif enemy.enemy_type == EnemyAI.EnemyType.NINJA:
+				e_stance = "downward_slam"
+			else:
+				e_stance = "heavy_slash"
+		elif enemy.state == EnemyAI.StateKind.HITSTUN:
+			e_stance = "parry_guard"
+
 		var e_pose := ModularAssetSystem.StickmanPoseSolver.generate_stickman_pose(
 			enemy.position,
 			enemy.facing,
@@ -1929,9 +2218,10 @@ func _draw() -> void:
 			e_attacking,
 			e_atk_prog,
 			true,
-			"normal"
+			e_stance
 		)
-		_draw_modular_character(e_pose, enemy.loadout_id, enemy.facing, 0.0, e_alpha)
+		var erig_active: bool = (_enemy_rig_pool.size() > enemy_idx and _enemy_rig_pool[enemy_idx] != null and _enemy_rig_pool[enemy_idx].visible)
+		_draw_modular_character(e_pose, enemy.loadout_id, enemy.facing, 0.0, e_alpha, Color(0, 0, 0, 0), erig_active)
 
 		# Windup telegraph
 		if enemy.state == EnemyAI.StateKind.WINDUP:
@@ -1970,9 +2260,13 @@ func _draw() -> void:
 		p_attacking,
 		p_atk_prog,
 		false,
-		p_stance
+		p_stance,
+		player_accel_x,
+		player_dynamics_ctx,
+		player_dt_last
 	)
-	_draw_modular_character(player_pose, player.loadout_id, player.facing, gear_alignment, 1.0)
+	var p_rig_active: bool = (player_rig != null and player_rig.visible)
+	_draw_modular_character(player_pose, player.loadout_id, player.facing, gear_alignment, 1.0, Color(0, 0, 0, 0), p_rig_active)
 
 	if player.parry_timer > 0.0:
 		var ward_scr: Vector2 = to_screen(player.position + Vector2(0.0, 20.0))
@@ -2052,11 +2346,14 @@ func _draw_modular_character(
 	loadout_id: String,
 	facing: float,
 	gear_alignment: float,
-	alpha_mult: float
+	alpha_mult: float,
+	tint_color: Color = Color(0, 0, 0, 0),
+	has_active_rig: bool = false
 ) -> void:
 	var loadout := asset_registry.get_loadout(loadout_id)
 	if loadout == null:
-		_draw_pose_skeleton(pose, Color(1.0, 1.0, 1.0, alpha_mult), 2.5)
+		var fallback_col := Color(1.0, 1.0, 1.0, alpha_mult) if tint_color.a <= 0.0 else Color(tint_color.r, tint_color.g, tint_color.b, tint_color.a * alpha_mult)
+		_draw_pose_skeleton(pose, fallback_col, 2.5)
 		return
 
 	# Render all equipped anatomical & armor PartSlots
@@ -2073,8 +2370,10 @@ func _draw_modular_character(
 		var end_sim: Vector2 = xform["end"]
 		var center_sim: Vector2 = xform["center"] + part.offset
 		var bone_angle: float = float(xform["angle"]) + part.rotation_offset
-		var p_col := Color(part.primary_color.r, part.primary_color.g, part.primary_color.b, part.primary_color.a * alpha_mult)
-		var s_col := Color(part.secondary_color.r, part.secondary_color.g, part.secondary_color.b, part.secondary_color.a * alpha_mult)
+		var base_p: Color = tint_color if tint_color.a > 0.0 else part.primary_color
+		var base_s: Color = tint_color if tint_color.a > 0.0 else part.secondary_color
+		var p_col := Color(base_p.r, base_p.g, base_p.b, base_p.a * alpha_mult)
+		var s_col := Color(base_s.r, base_s.g, base_s.b, base_s.a * alpha_mult)
 
 		match part.backend:
 			ModularAssetSystem.AssetRenderBackend.CUSTOM_POLYGON:
@@ -2085,7 +2384,7 @@ func _draw_modular_character(
 						var sim_pt: Vector2 = center_sim + scaled_pt.rotated(bone_angle)
 						scr_poly.append(to_screen(sim_pt))
 					_d_polygon(scr_poly, p_col)
-				else:
+				elif not has_active_rig:
 					_d_line(to_screen(start_sim), to_screen(end_sim), p_col, part.line_width)
 
 			ModularAssetSystem.AssetRenderBackend.TEXTURE_SPRITE:
@@ -2093,19 +2392,25 @@ func _draw_modular_character(
 					var tex_size: Vector2 = part.texture.get_size() * part.scale
 					var scr_pos: Vector2 = to_screen(center_sim) - tex_size * 0.5
 					_d_tex_rect(part.texture, Rect2(scr_pos, tex_size), false, p_col)
-				else:
+				elif not has_active_rig:
 					_d_circle(to_screen(center_sim), 6.0, p_col)
 
+			ModularAssetSystem.AssetRenderBackend.PACKED_SCENE:
+				if not has_active_rig:
+					_d_line(to_screen(start_sim), to_screen(end_sim), p_col, part.line_width)
+					_d_circle(to_screen(center_sim), 3.0, s_col)
+
 			_:
-				if slot == ModularAssetSystem.PartSlot.HEAD:
-					_d_arc(to_screen(pose.head_center), pose.head_radius, 0.0, TAU, 20, p_col, part.line_width)
-				elif slot == ModularAssetSystem.PartSlot.SCARF_CAPE and pose.scarf_nodes.size() >= 3:
+				if slot == ModularAssetSystem.PartSlot.SCARF_CAPE and pose.scarf_nodes.size() >= 3:
 					var head_back: Vector2 = pose.head_center + Vector2((-1.0 if facing >= 0.0 else 1.0) * pose.head_radius, 0.0)
 					_d_line(to_screen(head_back), to_screen(pose.scarf_nodes[0]), p_col, part.line_width)
 					_d_line(to_screen(pose.scarf_nodes[0]), to_screen(pose.scarf_nodes[1]), p_col, part.line_width)
 					_d_line(to_screen(pose.scarf_nodes[1]), to_screen(pose.scarf_nodes[2]), s_col, part.line_width * 0.85)
-				else:
-					_d_line(to_screen(start_sim), to_screen(end_sim), p_col, part.line_width)
+				elif not has_active_rig:
+					if slot == ModularAssetSystem.PartSlot.HEAD:
+						_d_arc(to_screen(pose.head_center), pose.head_radius, 0.0, TAU, 20, p_col, part.line_width)
+					else:
+						_d_line(to_screen(start_sim), to_screen(end_sim), p_col, part.line_width)
 
 	# Render modular WeaponAssemblySpec (including Shift Staff interlocking cogs & key-teeth!)
 	if loadout.weapon_assembly != null:
@@ -2117,10 +2422,10 @@ func _draw_modular_character(
 			anim_time
 		)
 		for wp_item in wp_xforms:
-			var w_col: Color = wp_item["color"]
-			w_col.a *= alpha_mult
-			var g_col: Color = wp_item["glow_color"]
-			g_col.a *= alpha_mult
+			var base_wc: Color = tint_color if tint_color.a > 0.0 else wp_item["color"]
+			var base_gc: Color = tint_color if tint_color.a > 0.0 else wp_item["glow_color"]
+			var w_col := Color(base_wc.r, base_wc.g, base_wc.b, base_wc.a * alpha_mult)
+			var g_col := Color(base_gc.r, base_gc.g, base_gc.b, base_gc.a * alpha_mult)
 			var backend: int = int(wp_item["backend"])
 			var w_slot: int = int(wp_item["piece_slot"])
 
@@ -2157,26 +2462,22 @@ func _draw_ragdoll_piece(piece: RagdollPhysics.RagdollPieceData) -> void:
 		split_lo = asset_registry.get_loadout(split_id)
 
 	var active_lo := split_lo if split_lo != null else base_lo
-	var col: Color = active_lo.body_color if active_lo != null else piece.color
-	col.a *= ratio
+	var target_lid: String = split_id if split_lo != null else piece.loadout_id
 
-	var center_scr: Vector2 = to_screen(piece.position)
-	var rot_scr: float = -piece.rotation
+	var r_pose := ModularAssetSystem.StickmanPoseSolver.generate_ragdoll_pose(
+		piece.position,
+		piece.rotation,
+		piece.facing,
+		piece.part,
+		piece.loadout_id
+	)
 
-	if piece.part == RagdollPhysics.RagdollPart.UPPER_TORSO:
-		var neck_off := Vector2(0.0, -14.0).rotated(rot_scr)
-		var head_off := Vector2(0.0, -22.0).rotated(rot_scr)
-		var arm_l := Vector2(-12.0, -8.0).rotated(rot_scr)
-		var arm_r := Vector2(12.0, -8.0).rotated(rot_scr)
-		_d_line(center_scr, center_scr + neck_off, col, 2.8)
-		_d_arc(center_scr + head_off, 7.0, 0.0, TAU, 14, col, 2.4)
-		_d_line(center_scr + neck_off, center_scr + arm_l, col, 2.2)
-		_d_line(center_scr + neck_off, center_scr + arm_r, col, 2.2)
+	if active_lo != null:
+		_draw_modular_character(r_pose, target_lid, piece.facing, 0.0, ratio)
 	else:
-		var leg_l := Vector2(-9.0, 14.0).rotated(rot_scr)
-		var leg_r := Vector2(9.0, 14.0).rotated(rot_scr)
-		_d_line(center_scr, center_scr + leg_l, col, 2.6)
-		_d_line(center_scr, center_scr + leg_r, col, 2.6)
+		var col: Color = piece.color
+		col.a *= ratio
+		_draw_pose_skeleton(r_pose, col, 2.5)
 
 
 func _draw_chrono_shift_cockpit() -> void:

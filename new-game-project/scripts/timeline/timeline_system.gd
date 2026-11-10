@@ -150,6 +150,14 @@ class ChronoEchoData extends RefCounted:
 	var max_timer: float = 3.0
 	var radius: float = 95.0
 	var echo_type: String = "slash"
+	var facing: float = 1.0
+	var velocity: Vector2 = Vector2.ZERO
+	var is_grounded: bool = true
+	var stance: String = "normal"
+	var anim_time: float = 0.0
+	var loadout_id: String = "player_shift_staff"
+	var is_attacking: bool = false
+	var attack_progress: float = 0.0
 
 	func _init(
 		p_origin: Vector2 = Vector2.ZERO,
@@ -157,7 +165,13 @@ class ChronoEchoData extends RefCounted:
 		p_era: int = TimelineEra.PRESENT,
 		p_echo_type: String = "slash",
 		p_radius: float = 95.0,
-		p_timer: float = 3.0
+		p_timer: float = 3.0,
+		p_facing: float = 1.0,
+		p_velocity: Vector2 = Vector2.ZERO,
+		p_grounded: bool = true,
+		p_stance: String = "normal",
+		p_anim_time: float = 0.0,
+		p_loadout_id: String = "player_shift_staff"
 	) -> void:
 		origin = Vector2(
 			p_origin.x if is_finite(p_origin.x) else 0.0,
@@ -174,6 +188,21 @@ class ChronoEchoData extends RefCounted:
 		var safe_t: float = maxf(0.01, p_timer) if is_finite(p_timer) else 3.0
 		timer = safe_t
 		max_timer = safe_t
+		facing = 1.0 if (is_finite(p_facing) and p_facing >= 0.0) else -1.0
+		velocity = Vector2(
+			p_velocity.x if is_finite(p_velocity.x) else 0.0,
+			p_velocity.y if is_finite(p_velocity.y) else 0.0
+		)
+		is_grounded = p_grounded
+		stance = p_stance if not p_stance.is_empty() else "normal"
+		anim_time = fmod(p_anim_time, 10000.0) if is_finite(p_anim_time) else 0.0
+		loadout_id = p_loadout_id if not p_loadout_id.is_empty() else "player_shift_staff"
+		is_attacking = (echo_type == "slash" or echo_type == "heavy")
+		attack_progress = 0.55 if echo_type == "slash" else (0.65 if echo_type == "heavy" else 0.0)
+
+	func fade_ratio() -> float:
+		return clampf(timer / maxf(0.001, max_timer), 0.0, 1.0)
+
 
 class LoreGlyphData extends RefCounted:
 	var id: String = ""
@@ -465,9 +494,30 @@ class TimelineState extends RefCounted:
 		origin: Vector2,
 		aim_dir: Vector2,
 		era: int,
-		echo_type: String = "slash"
+		echo_type: String = "slash",
+		p_radius: float = 95.0,
+		p_timer: float = 3.0,
+		p_facing: float = 1.0,
+		p_velocity: Vector2 = Vector2.ZERO,
+		p_grounded: bool = true,
+		p_stance: String = "normal",
+		p_anim_time: float = 0.0,
+		p_loadout_id: String = "player_shift_staff"
 	) -> ChronoEchoData:
-		var echo := ChronoEchoData.new(origin, aim_dir, era, echo_type, 95.0, 3.0)
+		var echo := ChronoEchoData.new(
+			origin,
+			aim_dir,
+			era,
+			echo_type,
+			p_radius,
+			p_timer,
+			p_facing,
+			p_velocity,
+			p_grounded,
+			p_stance,
+			p_anim_time,
+			p_loadout_id
+		)
 		echoes.append(echo)
 		return echo
 

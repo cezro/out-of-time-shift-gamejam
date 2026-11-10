@@ -29,8 +29,8 @@
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
 | M1 | Procedural Rig & Scene Asset Integration | Import procedural rig scenes, scripts, and textures; fix reference bugs; register PackedScene backend | none | DONE |
-| M2 | Snappy Motion Dynamics & Procedural Solver Upgrade | Implement skills-informed mathematical gait, springs, squash/stretch, and combat sweeps in pose solver | M1 | IN_PROGRESS |
-| M3 | Global Coverage Across All Stickman Entities | Wire player, timeline clones/ghosts, and 6 enemy types to procedural stickman rig; replace legacy references | M2 | PLANNED |
+| M2 | Snappy Motion Dynamics & Procedural Solver Upgrade | Implement skills-informed mathematical gait, springs, squash/stretch, and combat sweeps in pose solver | M1 | DONE |
+| M3 | Global Coverage Across All Stickman Entities | Wire player, timeline clones/ghosts, and 6 enemy types to procedural stickman rig; replace legacy references | M2 | IN_PROGRESS |
 | M4 | Dedicated Test Scene & Automated Regression Suite | Create dedicated test scene and verify 100% pass rate in `run_tests.bat` | M3 | PLANNED |
 
 ## Interface Contracts
