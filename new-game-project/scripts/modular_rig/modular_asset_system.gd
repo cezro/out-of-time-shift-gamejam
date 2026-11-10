@@ -1166,9 +1166,6 @@ class StickmanPoseSolver extends RefCounted:
 		pose.sword_hilt = Vector2(ax + (pose.sword_hilt.x - ax) * sx, ay + (pose.sword_hilt.y - ay) * sy)
 		pose.sword_tip = Vector2(ax + (pose.sword_tip.x - ax) * sx, ay + (pose.sword_tip.y - ay) * sy)
 
-		for i in range(pose.scarf_nodes.size()):
-			pose.scarf_nodes[i] = Vector2(ax + (pose.scarf_nodes[i].x - ax) * sx, ay + (pose.scarf_nodes[i].y - ay) * sy)
-
 	static func generate_stickman_pose(
 		pos: Vector2,
 		facing: float,
@@ -1402,9 +1399,41 @@ class StickmanPoseSolver extends RefCounted:
 			sword_hilt = right_hand - sword_dir * 5.0
 			sword_tip = right_hand + sword_dir * 34.0
 
+		var pose := StickmanPose.new()
+		pose.head_center = head_center
+		pose.head_radius = head_radius
+		pose.neck = neck
+		pose.pelvis = pelvis
+		pose.left_shoulder = left_shoulder
+		pose.left_elbow = left_elbow
+		pose.left_hand = left_hand
+		pose.right_shoulder = right_shoulder
+		pose.right_elbow = right_elbow
+		pose.right_hand = right_hand
+		pose.left_hip = left_hip
+		pose.left_knee = left_knee
+		pose.left_foot = left_foot
+		pose.right_hip = right_hip
+		pose.right_knee = right_knee
+		pose.right_foot = right_foot
+		pose.sword_hilt = sword_hilt
+		pose.sword_tip = sword_tip
+		pose.stance = stance
+
+		# Volume-preserving squash & stretch anchor deformation on body skeleton
+		var sq_scale: Vector2 = Vector2.ONE
+		if custom_squash_stretch != Vector2.ZERO and is_finite(custom_squash_stretch.x) and is_finite(custom_squash_stretch.y) and custom_squash_stretch.x > 0.0 and custom_squash_stretch.y > 0.0:
+			sq_scale = custom_squash_stretch
+		elif not is_grounded and stance == "normal":
+			sq_scale = calculate_air_squash_stretch(safe_vel.y, is_grounded)
+
+		if not is_equal_approx(sq_scale.y, 1.0) or not is_equal_approx(sq_scale.x, 1.0):
+			_apply_volume_deformation(pose, safe_pos, sq_scale)
+
 		# 6. Scarf / Headband ribbon with secondary spring lag and distance constraint clamping
+		# Computed after volume deformation so squash/stretch does not violate distance constraints.
 		var clamped_vy: float = clampf(safe_vel.y, -2000.0, 2000.0)
-		var head_back: Vector2 = head_center + Vector2(-face_dir * head_radius, 0.0)
+		var head_back: Vector2 = pose.head_center + Vector2(-face_dir * pose.head_radius, 0.0)
 		var target_s0: Vector2 = head_back + Vector2(
 			-face_dir * 8.0, (sin(safe_anim_time * 8.0) * 3.0) - clamped_vy * 0.02
 		)
@@ -1427,58 +1456,31 @@ class StickmanPoseSolver extends RefCounted:
 			dynamics_ctx.scarf_springs[2].snap_to(target_s2)
 			scarf_2 = dynamics_ctx.scarf_springs[2].update(safe_dt)
 
-		# Distance constraint clamping L in [6.0, 14.0] px
-		var d01: float = scarf_0.distance_to(scarf_1)
-		if d01 > 0.001:
-			var dir01: Vector2 = (scarf_1 - scarf_0) / d01
-			scarf_1 = scarf_0 + dir01 * clampf(d01, 6.0, 14.0)
-		var d12: float = scarf_1.distance_to(scarf_2)
-		if d12 > 0.001:
-			var dir12: Vector2 = (scarf_2 - scarf_1) / d12
-			scarf_2 = scarf_1 + dir12 * clampf(d12, 6.0, 14.0)
-
-		# Ensure trailing invariant behind head_center in facing direction
+		# Anchor scarf_0 strictly behind head_back
 		if face_dir > 0.0:
 			scarf_0.x = minf(scarf_0.x, head_back.x - 4.0)
-			scarf_1.x = minf(scarf_1.x, scarf_0.x - 4.0)
-			scarf_2.x = minf(scarf_2.x, scarf_1.x - 4.0)
 		else:
 			scarf_0.x = maxf(scarf_0.x, head_back.x + 4.0)
-			scarf_1.x = maxf(scarf_1.x, scarf_0.x + 4.0)
-			scarf_2.x = maxf(scarf_2.x, scarf_1.x + 4.0)
 
-		var pose := StickmanPose.new()
-		pose.head_center = head_center
-		pose.head_radius = head_radius
-		pose.neck = neck
-		pose.pelvis = pelvis
-		pose.left_shoulder = left_shoulder
-		pose.left_elbow = left_elbow
-		pose.left_hand = left_hand
-		pose.right_shoulder = right_shoulder
-		pose.right_elbow = right_elbow
-		pose.right_hand = right_hand
-		pose.left_hip = left_hip
-		pose.left_knee = left_knee
-		pose.left_foot = left_foot
-		pose.right_hip = right_hip
-		pose.right_knee = right_knee
-		pose.right_foot = right_foot
-		pose.sword_hilt = sword_hilt
-		pose.sword_tip = sword_tip
+		# Segment 0->1: clamp distance strictly into [7.0, 13.0] and enforce trailing backward
+		var d01: float = scarf_0.distance_to(scarf_1)
+		var dir01: Vector2 = (scarf_1 - scarf_0) / maxf(0.001, d01)
+		if face_dir > 0.0 and dir01.x > -0.2:
+			dir01 = Vector2(-1.0, dir01.y).normalized()
+		elif face_dir < 0.0 and dir01.x < 0.2:
+			dir01 = Vector2(1.0, dir01.y).normalized()
+		scarf_1 = scarf_0 + dir01 * clampf(d01, 7.0, 13.0)
+
+		# Segment 1->2: clamp distance strictly into [7.0, 13.0] and enforce trailing backward
+		var d12: float = scarf_1.distance_to(scarf_2)
+		var dir12: Vector2 = (scarf_2 - scarf_1) / maxf(0.001, d12)
+		if face_dir > 0.0 and dir12.x > -0.2:
+			dir12 = Vector2(-1.0, dir12.y).normalized()
+		elif face_dir < 0.0 and dir12.x < 0.2:
+			dir12 = Vector2(1.0, dir12.y).normalized()
+		scarf_2 = scarf_1 + dir12 * clampf(d12, 7.0, 13.0)
+
 		pose.scarf_nodes = [scarf_0, scarf_1, scarf_2]
-		pose.stance = stance
-
-		# Volume-preserving squash & stretch anchor deformation
-		var sq_scale: Vector2 = Vector2.ONE
-		if custom_squash_stretch != Vector2.ZERO and is_finite(custom_squash_stretch.x) and is_finite(custom_squash_stretch.y) and custom_squash_stretch.x > 0.0 and custom_squash_stretch.y > 0.0:
-			sq_scale = custom_squash_stretch
-		elif not is_grounded and stance == "normal":
-			sq_scale = calculate_air_squash_stretch(safe_vel.y, is_grounded)
-
-		if not is_equal_approx(sq_scale.y, 1.0) or not is_equal_approx(sq_scale.x, 1.0):
-			_apply_volume_deformation(pose, safe_pos, sq_scale)
-
 		return pose
 
 	## Generates a StickmanPose for bisected RagdollPieceData (UPPER_TORSO or LOWER_LEGS)

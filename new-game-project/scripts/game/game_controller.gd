@@ -110,6 +110,7 @@ var _runtime_badge_texture: Texture2D = null
 var draw_call_count: int = 0
 var last_draw_primitive_count: int = 0
 var _can_issue_canvas_draws: bool = false
+var _is_in_canvas_draw_pass: bool = false
 var ghost_distance_accum: float = 0.0
 var ghost_last_pos: Vector2 = Vector2.ZERO
 var player_dynamics_ctx: ModularAssetSystem.PoseDynamicsContext = ModularAssetSystem.PoseDynamicsContext.new()
@@ -212,6 +213,24 @@ func _ensure_scene_nodes() -> void:
 	_init_echo_rig_pool()
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_DRAW:
+		_is_in_canvas_draw_pass = true
+
+
+func _exit_tree() -> void:
+	if audio_mgr != null and is_instance_valid(audio_mgr):
+		audio_mgr.stop_all()
+	for erig in _echo_rig_pool:
+		if is_instance_valid(erig) and erig.get_parent() == null:
+			erig.free()
+	_echo_rig_pool.clear()
+	for erig in _enemy_rig_pool:
+		if is_instance_valid(erig) and erig.get_parent() == null:
+			erig.free()
+	_enemy_rig_pool.clear()
+
+
 func _ensure_player_rig() -> void:
 	if player_rig == null and is_inside_tree():
 		player_rig = get_node_or_null("Player") as StickmanProcedural
@@ -225,6 +244,7 @@ func _ensure_player_rig() -> void:
 			player_rig.autonomous_physics = false
 			player_rig.visible = true
 			player_rig.scale = Vector2(0.12, 0.12)
+			player_rig.modulate = Color(0.96, 0.98, 1.0, 1.0)
 			player_rig.z_index = 5
 
 
@@ -1994,7 +2014,7 @@ func _d_tex_rect(
 
 
 func _draw() -> void:
-	_can_issue_canvas_draws = (get_stack().size() <= 1) and is_inside_tree()
+	_can_issue_canvas_draws = _is_in_canvas_draw_pass and is_inside_tree()
 	draw_call_count += 1
 	last_draw_primitive_count = 0
 
@@ -2285,7 +2305,12 @@ func _draw() -> void:
 		if part == null:
 			continue
 		var p_scr: Vector2 = to_screen(part.position)
-		_d_circle(p_scr, part.size, part.color)
+		var p_vel_scr := Vector2(part.velocity.x, -part.velocity.y) * 0.022
+		if p_vel_scr.length_squared() > 6.0:
+			_d_line(p_scr, p_scr - p_vel_scr, part.color, part.size * 1.1)
+			_d_circle(p_scr, part.size * 0.6, part.color)
+		else:
+			_d_circle(p_scr, part.size, part.color)
 
 	for sv_var in slash_visuals:
 		var sv: CombatMath.SlashArcVisualData = sv_var
@@ -2325,20 +2350,34 @@ func _draw() -> void:
 
 	# 11. Top-Right Chronos Shift H-Gate Cockpit
 	_draw_chrono_shift_cockpit()
+	_is_in_canvas_draw_pass = false
 
 
 func _draw_pose_skeleton(pose: ModularAssetSystem.StickmanPose, col: Color, width: float) -> void:
-	_d_arc(to_screen(pose.head_center), pose.head_radius, 0.0, TAU, 16, col, width)
-	_d_line(to_screen(pose.pelvis), to_screen(pose.neck), col, width)
-	_d_line(to_screen(pose.left_shoulder), to_screen(pose.left_elbow), col, width)
-	_d_line(to_screen(pose.left_elbow), to_screen(pose.left_hand), col, width)
-	_d_line(to_screen(pose.right_shoulder), to_screen(pose.right_elbow), col, width)
-	_d_line(to_screen(pose.right_elbow), to_screen(pose.right_hand), col, width)
-	_d_line(to_screen(pose.left_hip), to_screen(pose.left_knee), col, width)
-	_d_line(to_screen(pose.left_knee), to_screen(pose.left_foot), col, width)
-	_d_line(to_screen(pose.right_hip), to_screen(pose.right_knee), col, width)
-	_d_line(to_screen(pose.right_knee), to_screen(pose.right_foot), col, width)
-	_d_line(to_screen(pose.sword_hilt), to_screen(pose.sword_tip), col, width)
+	if pose.head_radius > 0.0:
+		_d_circle(to_screen(pose.head_center), pose.head_radius, col)
+	var b_width: float = maxf(width, 6.0)
+	_d_line(to_screen(pose.pelvis), to_screen(pose.neck), col, b_width * 1.2)
+	_d_circle(to_screen(pose.neck), b_width * 0.5, col)
+	_d_circle(to_screen(pose.pelvis), b_width * 0.5, col)
+	_d_line(to_screen(pose.left_shoulder), to_screen(pose.left_elbow), col, b_width * 0.85)
+	_d_circle(to_screen(pose.left_elbow), b_width * 0.4, col)
+	_d_line(to_screen(pose.left_elbow), to_screen(pose.left_hand), col, b_width * 0.75)
+	_d_circle(to_screen(pose.left_hand), b_width * 0.45, col)
+	_d_line(to_screen(pose.right_shoulder), to_screen(pose.right_elbow), col, b_width * 0.95)
+	_d_circle(to_screen(pose.right_elbow), b_width * 0.45, col)
+	_d_line(to_screen(pose.right_elbow), to_screen(pose.right_hand), col, b_width * 0.85)
+	_d_circle(to_screen(pose.right_hand), b_width * 0.5, col)
+	_d_line(to_screen(pose.left_hip), to_screen(pose.left_knee), col, b_width * 0.95)
+	_d_circle(to_screen(pose.left_knee), b_width * 0.45, col)
+	_d_line(to_screen(pose.left_knee), to_screen(pose.left_foot), col, b_width * 0.85)
+	_d_circle(to_screen(pose.left_foot), b_width * 0.45, col)
+	_d_line(to_screen(pose.right_hip), to_screen(pose.right_knee), col, b_width * 1.05)
+	_d_circle(to_screen(pose.right_knee), b_width * 0.5, col)
+	_d_line(to_screen(pose.right_knee), to_screen(pose.right_foot), col, b_width * 0.95)
+	_d_circle(to_screen(pose.right_foot), b_width * 0.5, col)
+	if pose.sword_hilt != pose.sword_tip:
+		_d_line(to_screen(pose.sword_hilt), to_screen(pose.sword_tip), col, b_width * 0.6)
 
 
 func _draw_modular_character(
@@ -2363,6 +2402,12 @@ func _draw_modular_character(
 			continue
 		var part: ModularAssetSystem.PartPieceSpec = loadout.parts[slot]
 		if part == null:
+			continue
+
+		# Fast-path: procedural skeleton lines already drawn by active procedural rig
+		if has_active_rig and part.backend == ModularAssetSystem.AssetRenderBackend.PROCEDURAL_VECTOR and slot != ModularAssetSystem.PartSlot.SCARF_CAPE:
+			continue
+		if has_active_rig and part.backend == ModularAssetSystem.AssetRenderBackend.PACKED_SCENE:
 			continue
 
 		var xform: Dictionary = ModularAssetSystem.StickmanPoseSolver.compute_slot_transform(pose, slot, facing)
@@ -2472,12 +2517,89 @@ func _draw_ragdoll_piece(piece: RagdollPhysics.RagdollPieceData) -> void:
 		piece.loadout_id
 	)
 
-	if active_lo != null:
-		_draw_modular_character(r_pose, target_lid, piece.facing, 0.0, ratio)
+	# Determine archetype color
+	var base_col: Color = piece.color
+	if base_col == Color.WHITE or base_col.a <= 0.0:
+		if active_lo != null and active_lo.body_color.a > 0.0:
+			base_col = active_lo.body_color
+		else:
+			match piece.loadout_id:
+				"enemy_runner": base_col = Color(1.0, 0.32, 0.32)
+				"enemy_ninja": base_col = Color(0.72, 0.28, 0.95)
+				"enemy_heavy": base_col = Color(1.0, 0.55, 0.15)
+				"enemy_gunner_semi": base_col = Color(0.25, 0.95, 0.45)
+				"enemy_gunner_auto": base_col = Color(1.0, 0.85, 0.2)
+				"enemy_sniper": base_col = Color(0.2, 0.75, 1.0)
+				_: base_col = Color(0.9, 0.25, 0.25)
+
+	var p_alpha: float = clampf(ratio * 1.15, 0.0, 1.0)
+	var col := Color(base_col.r, base_col.g, base_col.b, p_alpha)
+	var back_col := Color(base_col.r * 0.80, base_col.g * 0.80, base_col.b * 0.86, p_alpha)
+
+	if piece.part == RagdollPhysics.RagdollPart.UPPER_TORSO:
+		# Solid head with clean outline (One vs Many style)
+		_d_circle(to_screen(r_pose.head_center), r_pose.head_radius, col)
+		_d_arc(to_screen(r_pose.head_center), r_pose.head_radius, 0.0, TAU, 16, Color(1.0, 1.0, 1.0, 0.35 * p_alpha), 1.2)
+		# Bold torso
+		_d_line(to_screen(r_pose.pelvis), to_screen(r_pose.neck), col, 8.5)
+		_d_circle(to_screen(r_pose.neck), 4.25, col)
+		# Back arm
+		_d_line(to_screen(r_pose.left_shoulder), to_screen(r_pose.left_elbow), back_col, 5.2)
+		_d_circle(to_screen(r_pose.left_elbow), 2.6, back_col)
+		_d_line(to_screen(r_pose.left_elbow), to_screen(r_pose.left_hand), back_col, 4.6)
+		_d_circle(to_screen(r_pose.left_hand), 2.6, back_col)
+		# Front arm
+		_d_line(to_screen(r_pose.right_shoulder), to_screen(r_pose.right_elbow), col, 6.0)
+		_d_circle(to_screen(r_pose.right_elbow), 3.0, col)
+		_d_line(to_screen(r_pose.right_elbow), to_screen(r_pose.right_hand), col, 5.4)
+		_d_circle(to_screen(r_pose.right_hand), 3.0, col)
+		# Equipped weapon
+		if r_pose.sword_hilt != r_pose.sword_tip:
+			_d_line(to_screen(r_pose.sword_hilt), to_screen(r_pose.sword_tip), Color(0.95, 0.95, 0.98, p_alpha), 3.4)
+		# Severed cut plane highlight (clean angled slice plane)
+		var cut_tan := Vector2(cos(-piece.rotation), sin(-piece.rotation)).orthogonal()
+		var c1 := to_screen(r_pose.pelvis) - cut_tan * 7.5
+		var c2 := to_screen(r_pose.pelvis) + cut_tan * 7.5
+		_d_line(c1, c2, Color(col.r * 1.3, col.g * 0.3, col.b * 0.3, 0.8 * p_alpha), 6.5)
+		_d_line(c1, c2, Color(1.0, 1.0, 1.0, 0.95 * p_alpha), 3.0)
+		if not piece.is_settled and ratio > 0.2:
+			var trail_v: Vector2 = Vector2(-piece.velocity.x, piece.velocity.y) * 0.016
+			_d_circle(to_screen(r_pose.pelvis) + trail_v, 2.8, Color(0.95, 0.15, 0.2, 0.85 * p_alpha))
+			_d_circle(to_screen(r_pose.pelvis) + trail_v * 1.8, 1.8, Color(0.95, 0.15, 0.2, 0.65 * p_alpha))
+		if piece.is_settled:
+			var p_floor := to_screen(piece.position)
+			_d_line(p_floor - Vector2(10.0, 0.0), p_floor + Vector2(10.0, 0.0), Color(0.85, 0.12, 0.18, 0.55 * p_alpha), 2.8)
 	else:
-		var col: Color = piece.color
-		col.a *= ratio
-		_draw_pose_skeleton(r_pose, col, 2.5)
+		# Lower legs piece
+		var cut_tan := Vector2(cos(-piece.rotation), sin(-piece.rotation)).orthogonal()
+		var c1 := to_screen(r_pose.pelvis) - cut_tan * 7.5
+		var c2 := to_screen(r_pose.pelvis) + cut_tan * 7.5
+		_d_line(c1, c2, Color(col.r * 1.3, col.g * 0.3, col.b * 0.3, 0.8 * p_alpha), 6.5)
+		_d_line(c1, c2, Color(1.0, 1.0, 1.0, 0.95 * p_alpha), 3.0)
+		_d_circle(to_screen(r_pose.pelvis), 4.25, col)
+		# Hips
+		_d_line(to_screen(r_pose.pelvis), to_screen(r_pose.left_hip), back_col, 6.8)
+		_d_line(to_screen(r_pose.pelvis), to_screen(r_pose.right_hip), col, 7.2)
+		# Back leg
+		_d_line(to_screen(r_pose.left_hip), to_screen(r_pose.left_knee), back_col, 6.0)
+		_d_circle(to_screen(r_pose.left_knee), 3.0, back_col)
+		_d_line(to_screen(r_pose.left_knee), to_screen(r_pose.left_foot), back_col, 5.2)
+		_d_circle(to_screen(r_pose.left_foot), 2.8, back_col)
+		# Front leg
+		_d_line(to_screen(r_pose.right_hip), to_screen(r_pose.right_knee), col, 6.8)
+		_d_circle(to_screen(r_pose.right_knee), 3.4, col)
+		_d_line(to_screen(r_pose.right_knee), to_screen(r_pose.right_foot), col, 5.8)
+		_d_circle(to_screen(r_pose.right_foot), 3.2, col)
+		if not piece.is_settled and ratio > 0.2:
+			var trail_v: Vector2 = Vector2(-piece.velocity.x, piece.velocity.y) * 0.016
+			_d_circle(to_screen(r_pose.pelvis) + trail_v, 2.8, Color(0.95, 0.15, 0.2, 0.85 * p_alpha))
+		if piece.is_settled:
+			var p_floor := to_screen(piece.position)
+			_d_line(p_floor - Vector2(10.0, 0.0), p_floor + Vector2(10.0, 0.0), Color(0.85, 0.12, 0.18, 0.55 * p_alpha), 2.8)
+
+	# Draw equipped modular pieces/armor on top of ragdoll piece
+	if active_lo != null:
+		_draw_modular_character(r_pose, target_lid, piece.facing, 0.0, ratio, Color(0, 0, 0, 0), true)
 
 
 func _draw_chrono_shift_cockpit() -> void:

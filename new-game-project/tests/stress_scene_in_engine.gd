@@ -18,6 +18,15 @@ func _init() -> void:
 		quit(1)
 		return
 
+	# Warm-up cycle to allow Godot to load and cache static scene resources (textures, audio streams)
+	var warmup: Node = packed.instantiate()
+	root.add_child(warmup)
+	for f in range(FRAMES_PER_CYCLE):
+		if warmup.has_method("step_simulation"):
+			warmup.call("step_simulation", 0.016)
+	root.remove_child(warmup)
+	warmup.free()
+
 	var mem_initial: float = Performance.get_monitor(Performance.MEMORY_STATIC)
 	var obj_initial: float = Performance.get_monitor(Performance.OBJECT_COUNT)
 	var orphan_initial: float = Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)

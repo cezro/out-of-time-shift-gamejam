@@ -69,7 +69,7 @@ func play_sfx(sfx_name: String, pitch_scale: float = 1.0, volume_db: float = 0.0
 	var clean_pitch: float = clampf(pitch_scale, 0.1, 4.0) if is_finite(pitch_scale) else 1.0
 	var clean_vol: float = clampf(volume_db, -80.0, 24.0) if is_finite(volume_db) else 0.0
 
-	if not is_inside_tree():
+	if not is_inside_tree() or DisplayServer.get_name() == "headless":
 		return
 
 	if _players.is_empty():
@@ -84,3 +84,22 @@ func play_sfx(sfx_name: String, pitch_scale: float = 1.0, volume_db: float = 0.0
 		player.pitch_scale = clean_pitch
 		player.volume_db = clean_vol
 		player.play()
+
+
+## Stops all audio players and detaches active streams so audio server resources
+## and playback handles do not leak on scene teardown.
+func stop_all() -> void:
+	for player in _players:
+		if is_instance_valid(player):
+			player.stop()
+			player.stream = null
+
+
+func _exit_tree() -> void:
+	stop_all()
+	for player in _players:
+		if is_instance_valid(player) and player.get_parent() == null:
+			player.free()
+	_players.clear()
+	streams.clear()
+
