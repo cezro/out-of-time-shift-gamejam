@@ -53,6 +53,8 @@ enum AssetRenderBackend {
 	PACKED_SCENE = 3,
 }
 
+const PROCEDURAL_STICKMAN_SCENE_PATH: String = "res://scenes/stickman/stickmanprocedural.tscn"
+
 const UPPER_BODY_SLOTS: Array[int] = [
 	PartSlot.HEAD,
 	PartSlot.EYES,
@@ -281,6 +283,14 @@ class PartPieceSpec extends RefCounted:
 		copy.z_offset = z_offset
 		copy.metadata = metadata.duplicate(true)
 		return copy
+
+	func instantiate_scene() -> Node:
+		if scene_path.is_empty() or not ResourceLoader.exists(scene_path):
+			return null
+		var packed: PackedScene = load(scene_path)
+		if packed == null:
+			return null
+		return packed.instantiate()
 
 	func to_dict() -> Dictionary:
 		return {
@@ -690,6 +700,7 @@ class CharacterLoadout extends RefCounted:
 	var accent_color: Color = Color.CYAN
 	var parts: Dictionary = {} # int (PartSlot) -> PartPieceSpec
 	var weapon_assembly: WeaponAssemblySpec = null
+	var rig_scene_path: String = ""
 
 	func _init(
 		p_loadout_id: String = "",
@@ -724,6 +735,7 @@ class CharacterLoadout extends RefCounted:
 
 	func duplicate_loadout() -> CharacterLoadout:
 		var copy := CharacterLoadout.new(loadout_id, display_name, body_color, accent_color)
+		copy.rig_scene_path = rig_scene_path
 		for slot_key in parts.keys():
 			var p: PartPieceSpec = parts[slot_key]
 			if p != null:
@@ -731,6 +743,17 @@ class CharacterLoadout extends RefCounted:
 		if weapon_assembly != null:
 			copy.weapon_assembly = weapon_assembly.duplicate_assembly()
 		return copy
+
+	func instantiate_rig() -> Node:
+		if not rig_scene_path.is_empty() and ResourceLoader.exists(rig_scene_path):
+			var packed: PackedScene = load(rig_scene_path)
+			if packed != null:
+				return packed.instantiate()
+		for slot_key in parts.keys():
+			var part: PartPieceSpec = parts[slot_key]
+			if part != null and part.backend == AssetRenderBackend.PACKED_SCENE and not part.scene_path.is_empty():
+				return part.instantiate_scene()
+		return null
 
 	## Splits this CharacterLoadout into {"upper": CharacterLoadout, "lower": CharacterLoadout}
 	## so severed RagdollPart::UpperTorso and RagdollPart::LowerLegs retain their exact
@@ -753,6 +776,8 @@ class CharacterLoadout extends RefCounted:
 		else:
 			upper.weapon_assembly = null
 		lower.weapon_assembly = null
+		upper.rig_scene_path = rig_scene_path
+		lower.rig_scene_path = rig_scene_path
 
 		for slot_id in UPPER_BODY_SLOTS:
 			if parts.has(slot_id) and parts[slot_id] != null:
@@ -779,6 +804,7 @@ class CharacterLoadout extends RefCounted:
 			"body_color": _Ser.color_to_dict(body_color),
 			"accent_color": _Ser.color_to_dict(accent_color),
 			"parts": parts_dict,
+			"rig_scene_path": rig_scene_path,
 			"weapon_assembly": weapon_assembly.to_dict() if weapon_assembly != null else {},
 		}
 
@@ -795,6 +821,7 @@ class CharacterLoadout extends RefCounted:
 			_Ser.color_from_variant(d.get("body_color"), Color.WHITE),
 			_Ser.color_from_variant(d.get("accent_color"), Color.CYAN)
 		)
+		loadout.rig_scene_path = _Ser.safe_str(d.get("rig_scene_path"), "")
 		var raw_parts = d.get("parts", {})
 		if raw_parts is Dictionary:
 			for k in raw_parts.keys():
@@ -1237,6 +1264,34 @@ class ModularAssetRegistry extends RefCounted:
 		if loadout == null or loadout.loadout_id.is_empty():
 			return
 		loadouts[loadout.loadout_id] = loadout
+
+	const PROCEDURAL_STICKMAN_SCENE_PATH: String = "res://scenes/stickman/stickmanprocedural.tscn"
+
+	func instantiate_rig(loadout_id: String) -> Node:
+		var lo: CharacterLoadout = get_loadout(loadout_id)
+		if lo != null:
+			return lo.instantiate_rig()
+		return null
+
+	func get_rig_scene_path(loadout_id: String) -> String:
+		var lo: CharacterLoadout = get_loadout(loadout_id)
+		if lo == null:
+			return ""
+		if not lo.rig_scene_path.is_empty():
+			return lo.rig_scene_path
+		for slot_key in lo.parts.keys():
+			var p: PartPieceSpec = lo.parts[slot_key]
+			if p != null and p.backend == AssetRenderBackend.PACKED_SCENE:
+				return p.scene_path
+		return ""
+
+	static func instantiate_scene_backend(scene_path: String) -> Node:
+		if scene_path.is_empty() or not ResourceLoader.exists(scene_path):
+			return null
+		var packed: PackedScene = load(scene_path)
+		if packed == null:
+			return null
+		return packed.instantiate()
 
 	func get_loadout(loadout_id: String) -> CharacterLoadout:
 		return loadouts.get(loadout_id, null)
@@ -1803,3 +1858,32 @@ class ModularAssetRegistry extends RefCounted:
 		sniper.weapon_assembly.set_piece(rail_barrel)
 		sniper.weapon_assembly.set_piece(laser_module)
 		register_loadout(sniper)
+
+		# --------------------------------------------------------------------
+		# 8. PLAYER: "player_procedural_stickman"
+		# Full 2D skeletal CCDIK procedural stickman rig (PACKED_SCENE)
+		# --------------------------------------------------------------------
+		var stickman_white := Color(1.0, 1.0, 1.0, 1.0)
+		var stickman_cyan := Color(0.0, 0.85, 1.0, 0.95)
+
+		var stickman_rig := CharacterLoadout.new(
+			"player_procedural_stickman",
+			"Chronos Nomad (Procedural Rig)",
+			stickman_white,
+			stickman_cyan
+		)
+		stickman_rig.rig_scene_path = PROCEDURAL_STICKMAN_SCENE_PATH
+
+		var stickman_part := PartPieceSpec.new(
+			"procedural_stickman_rig_scene",
+			PartSlot.TORSO,
+			AssetRenderBackend.PACKED_SCENE,
+			stickman_white,
+			stickman_cyan,
+			2.5
+		)
+		stickman_part.scene_path = PROCEDURAL_STICKMAN_SCENE_PATH
+
+		register_part(stickman_part)
+		stickman_rig.equip_part(stickman_part)
+		register_loadout(stickman_rig)

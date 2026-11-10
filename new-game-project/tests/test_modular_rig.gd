@@ -20,6 +20,7 @@ func _init() -> void:
 	_test_runtime_piece_by_piece_injection()
 	_test_ragdoll_loadout_splitting()
 	_test_json_manifest_roundtrip_and_mcp_bridge()
+	_test_packed_scene_backend_and_procedural_stickman()
 
 	print("=== Test Summary: %d passed, %d failed ===" % [_passed, _failed])
 	if _failed > 0:
@@ -363,3 +364,84 @@ func _test_json_manifest_roundtrip_and_mcp_bridge() -> void:
 		reg_c.get_loadout("player_shift_staff").weapon_assembly.get_piece(RigSystem.WeaponPieceSlot.GEARWORK_CORE).piece_id == "mcp_injected_brass_cog",
 		"MCP-injected weapon piece automatically equipped onto target_loadout player_shift_staff"
 	)
+
+
+func _test_packed_scene_backend_and_procedural_stickman() -> void:
+	print("-- Test 7: PACKED_SCENE backend registration & procedural stickman scene instantiation --")
+	var registry := RigSystem.ModularAssetRegistry.new()
+
+	# 1. Preset & Part Registration Check
+	var stickman_loadout := registry.get_loadout("player_procedural_stickman")
+	_assert(stickman_loadout != null, "player_procedural_stickman preset exists in ModularAssetRegistry")
+	_assert(
+		registry.get_rig_scene_path("player_procedural_stickman") == RigSystem.ModularAssetRegistry.PROCEDURAL_STICKMAN_SCENE_PATH,
+		"Procedural stickman scene path correctly mapped to res://scenes/stickman/stickmanprocedural.tscn"
+	)
+
+	var rig_part := stickman_loadout.get_part(RigSystem.PartSlot.TORSO)
+	_assert(rig_part != null, "Torso slot has procedural stickman part equipped")
+	_assert(
+		rig_part.backend == RigSystem.AssetRenderBackend.PACKED_SCENE,
+		"Equipped part uses AssetRenderBackend.PACKED_SCENE"
+	)
+	_assert(
+		rig_part.scene_path == RigSystem.ModularAssetRegistry.PROCEDURAL_STICKMAN_SCENE_PATH,
+		"Part scene_path matches PROCEDURAL_STICKMAN_SCENE_PATH"
+	)
+
+	# 2. File and ResourceLoader Check
+	var scene_path: String = RigSystem.ModularAssetRegistry.PROCEDURAL_STICKMAN_SCENE_PATH
+	var scene_exists: bool = ResourceLoader.exists(scene_path)
+	_assert(scene_exists, "stickmanprocedural.tscn exists on disk at %s" % scene_path)
+	if not scene_exists:
+		printerr("    [SKIP] Cannot instantiate stickmanprocedural.tscn because file does not exist yet")
+		return
+
+	# 3. Instantiation via ModularAssetRegistry
+	var rig_node: Node = registry.instantiate_rig("player_procedural_stickman")
+	_assert(rig_node != null, "registry.instantiate_rig() successfully instantiated procedural stickman scene")
+	if rig_node == null:
+		return
+
+	# Mount to SceneTree root to trigger @onready and _ready()
+	root.add_child(rig_node)
+
+	# 4. Hierarchy & Node Type Integrity Check
+	_assert(rig_node is CharacterBody2D, "Root node is CharacterBody2D")
+	_assert(rig_node.get_script() != null, "Root node has attached stickmanprocedural.gd script")
+	_assert(rig_node.get_node_or_null("Rig") != null, "Rig Node2D exists in hierarchy")
+	_assert(rig_node.get_node_or_null("Rig/Bones/Skeleton2D") != null, "Skeleton2D exists under Rig/Bones")
+	_assert(rig_node.get_node_or_null("Rig/Body") != null, "Body visual container exists under Rig")
+	_assert(rig_node.get_node_or_null("IK Targets") != null, "IK Targets container exists on root")
+
+	# 5. Interface Contract Execution
+	_assert(
+		rig_node.has_method("update_procedural_animation"),
+		"Rig implements update_procedural_animation() contract"
+	)
+	_assert(
+		rig_node.has_method("get_bone_positions"),
+		"Rig implements get_bone_positions() contract"
+	)
+
+	# Exercise running ground gait
+	rig_node.call("update_procedural_animation", Vector2(240.0, 0.0), true, 1.0, "run", 0.016)
+	_assert(is_equal_approx(float(rig_node.get("facing")), 1.0), "Rig facing is 1.0 after forward run")
+
+	# Exercise aerial jump state with direction flip
+	rig_node.call("update_procedural_animation", Vector2(-150.0, -320.0), false, -1.0, "jump", 0.016)
+	_assert(is_equal_approx(float(rig_node.get("facing")), -1.0), "Rig facing turns to -1.0 on reverse jump")
+
+	# Exercise bone position query
+	var bone_dict: Dictionary = rig_node.call("get_bone_positions")
+	_assert(bone_dict.has("hip") or bone_dict.has("Hip") or bone_dict.has("pelvis"), "Bone dictionary contains hip joint")
+	_assert(bone_dict.has("head") or bone_dict.has("Head") or bone_dict.has("head_center"), "Bone dictionary contains head joint")
+
+	# 6. Teardown & Clean Cleanup
+	var initial_orphans: float = Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
+	root.remove_child(rig_node)
+	rig_node.free()
+	_assert(not is_instance_valid(rig_node), "Procedural stickman instance marked invalid after free")
+	var final_orphans: float = Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
+	_assert(final_orphans <= initial_orphans, "Procedural stickman freed without leaking orphan nodes")
+

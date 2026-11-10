@@ -1,0 +1,28 @@
+WARNING: The variable "len" has the same name as a built-in function.
+   at: GDScript::reload (res://scripts/chrono_shift/chrono_shift_model.gd:210)
+   GDScript backtrace (most recent call first):
+       [0] _init (c:/Users/Zero/Documents/GitHub Repositories/out-of-time-shift-gamejam/.agents/teamwork/explorer_survey_1/load_all_scripts.gd:24)
+WARNING: Values of the ternary operator are not mutually compatible.
+   at: GDScript::reload (res://scripts/chrono_shift/chrono_shift_model.gd:940)
+   GDScript backtrace (most recent call first):
+       [0] _init (c:/Users/Zero/Documents/GitHub Repositories/out-of-time-shift-gamejam/.agents/teamwork/explorer_survey_1/load_all_scripts.gd:24)
+WARNING: The local function parameter "center_x" is shadowing an already-declared function at line 76 in the current class.
+   at: GDScript::reload (res://scripts/timeline/timeline_system.gd:49)
+   GDScript backtrace (most recent call first):
+       [0] _init (c:/Users/Zero/Documents/GitHub Repositories/out-of-time-shift-gamejam/.agents/teamwork/explorer_survey_1/load_all_scripts.gd:24)
+WARNING: The local variable "world_dt" is declared but never used in the block. If this is intended, prefix it with an underscore: "_world_dt".
+   at: GDScript::reload (res://scripts/game/game_controller.gd:857)
+   GDScript backtrace (most recent call first):
+       [0] _init (c:/Users/Zero/Documents/GitHub Repositories/out-of-time-shift-gamejam/.agents/teamwork/explorer_survey_1/load_all_scripts.gd:24)
+WARNING: The local variable "tr" is shadowing an already-declared method in the base class "Object".
+   at: GDScript::reload (res://scripts/game/game_controller.gd:2255)
+   GDScript backtrace (most recent call first):
+       [0] _init (c:/Users/Zero/Documents/GitHub Repositories/out-of-time-shift-gamejam/.agents/teamwork/explorer_survey_1/load_all_scripts.gd:24)
+WARNING: The local function parameter "center_x" is shadowing an already-declared function at line 76 in the current class.
+   at: GDScript::reload (res://scripts/timeline/timeline_system.gd:49)
+   GDScript backtrace (most recent call first):
+       [0] _init (c:/Users/Zero/Documents/GitHub Repositories/out-of-time-shift-gamejam/.agents/teamwork/explorer_survey_1/load_all_scripts.gd:24)
+WARNING: The local variable "reg" is declared but never used in the block. If this is intended, prefix it with an underscore: "_reg".
+   at: GDScript::reload (res://tests/test_adversarial_disprover.gd:698)
+   GDScript backtrace (most recent call first):
+       [0] _init (c:/Users/Zero/Documents/GitHub Repositories/out-of-time-shift-gamejam/.agents/teamwork/explorer_survey_1/load_all_scripts.gd:24)

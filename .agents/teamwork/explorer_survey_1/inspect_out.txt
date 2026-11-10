@@ -1,0 +1,5 @@
+Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org
+
+has_script_signal: []
+method_list count: 5
+property_list count: 1

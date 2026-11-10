@@ -1,0 +1,18 @@
+--- a/new-game-project/tests/test_stickman_procedural_stress.gd
++++ b/new-game-project/tests/test_stickman_procedural_stress.gd
+@@ -438,3 +438,6 @@ func test_07_bone_positions_and_stickman_pose_completeness() -> bool:
+ 		ok = _check(pose.stance == "run", "pose.stance correctly reflects 'run'") and ok
++		# Verify coordinate parity (+Y UP in simulation space: head > neck > pelvis)
++		ok = _check(pose.head_center.y > pose.neck.y, "Simulation pose head is above neck (+Y UP: head.y=%f > neck.y=%f)" % [pose.head_center.y, pose.neck.y]) and ok
++		ok = _check(pose.neck.y > pose.pelvis.y, "Simulation pose neck is above pelvis (+Y UP: neck.y=%f > pelvis.y=%f)" % [pose.neck.y, pose.pelvis.y]) and ok
+ 
+ 	_cleanup_rig(rig)
+@@ -553,5 +556,5 @@ func test_10_multi_instance_isolation_and_lifecycle() -> bool:
+ 	# Teardown all instances cleanly
+ 	for rig in instances:
+ 		_cleanup_rig(rig)
+-
+-	ok = _check(true, "All 10 instances created, updated, and freed cleanly without errors") and ok
++		ok = _check(not is_instance_valid(rig), "Instance marked invalid after free") and ok
++
+ 	return ok

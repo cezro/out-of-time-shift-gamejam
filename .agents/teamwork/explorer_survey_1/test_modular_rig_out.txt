@@ -1,0 +1,12 @@
+Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org
+
+=== Running Modular Rig & Piece-by-Piece Asset System Tests ===
+-- Test 1: StickmanPoseSolver across all stances --
+-- Test 2: Bone transform calculation for all 20 PartSlot values --
+-- Test 3: Shift Staff 7-piece weapon assembly & Chronos Key alignment --
+-- Test 4: Runtime piece-by-piece injection of TEXTURE_SPRITE & CUSTOM_POLYGON --
+-- Test 5: Ragdoll Loadout Splitting (UpperTorso vs LowerLegs) --
+-- Test 6: JSON Manifest Export/Import Roundtrip & AssetMcpBridge --
+[INFO] Registered modular part 'mcp_injected_chrono_pauldron' in res://assets/modular_parts_manifest.json
+[INFO] Registered modular weapon piece 'mcp_injected_brass_cog' in res://assets/modular_parts_manifest.json
+=== Test Summary: 190 passed, 0 failed ===

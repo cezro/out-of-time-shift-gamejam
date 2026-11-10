@@ -1,0 +1,78 @@
+--- a/stickmanprocedural.tscn
++++ b/scenes/stickman/stickmanprocedural.tscn
+@@ -1,5 +1,6 @@
+ [gd_scene format=3 uid="uid://cbnjutyqjv0ek"]
+ 
++[ext_resource type="Script" uid="uid://vawx2quhkhg3" path="res://scripts/stickman/stickmanprocedural.gd" id="1_script"]
+ [ext_resource type="Texture2D" uid="uid://b3d4swrqcrn56" path="res://assets/stickman/ArmTopB.png" id="1_mxj5x"]
+ [ext_resource type="Texture2D" uid="uid://ct151o5cutda1" path="res://assets/stickman/ArmBotB.png" id="2_vhh0s"]
+ [ext_resource type="Texture2D" uid="uid://dpxgbtg1hbsf1" path="res://assets/stickman/HandB.png" id="3_fsj47"]
+@@ -109,19 +110,16 @@
+ bone2d_node = NodePath("Hip/Waist/Torso/Neck/Head")
+ target_nodepath = NodePath("../../../IK Targets/Head Target")
+ 
+-[sub_resource type="SkeletonModification2DCCDIK" id="SkeletonModification2DCCDIK_gavct"]
+-tip_nodepath = NodePath("Hip/Waist/Torso/Neck")
+-
+ [sub_resource type="SkeletonModificationStack2D" id="SkeletonModificationStack2D_y3uf6"]
+ enabled = true
+-modification_count = 6
++modification_count = 5
+ modifications/0 = SubResource("SkeletonModification2DCCDIK_aqggk")
+ modifications/1 = SubResource("SkeletonModification2DCCDIK_kt8o7")
+ modifications/2 = SubResource("SkeletonModification2DCCDIK_e4tth")
+ modifications/3 = SubResource("SkeletonModification2DCCDIK_w7c4t")
+ modifications/4 = SubResource("SkeletonModification2DLookAt_ymdls")
+-modifications/5 = SubResource("SkeletonModification2DCCDIK_gavct")
+ 
+ [node name="Player" type="CharacterBody2D" unique_id=562865352]
++script = ExtResource("1_script")
+ 
+ [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=947357809]
+--- a/stickmanprocedural.gd
++++ b/scripts/stickman/stickmanprocedural.gd
+@@ -1,5 +1,11 @@
++class_name StickmanProcedural
+ extends CharacterBody2D
+ 
++@export_group("Control Mode")
++## If true, reads Input and executes physics movement autonomously.
++## If false (default for entities/PACKED_SCENE), driven externally via update_procedural_animation.
++@export var autonomous_physics: bool = false
++
+ @export_group ("Movement")
+ @export var move_speed: float = 260.0
+ @export var acceleration: float = 1400.0
+@@ -15,13 +21,21 @@
+ 
+ @export var stride_length: float = 52.0
+ @export var foot_lift: float = 6.0
+-@export var hand_swing: float = 24.0
++@export var arm_swing: float = 24.0
+ @export var hand_lift: float = 6.0
+ @export var head_bounce: float = 2.5
+ @export var head_lean: float = 9.0
+ 
+-@export var pose_response: float = 18.0
++@export var snappiness: float = 18.0
+ 
++# Backward compatibility aliases
++var hand_swing: float:
++	get: return arm_swing
++	set(v): arm_swing = v
++var pose_response: float:
++	get: return snappiness
++	set(v): snappiness = v
++
+ @export_group("Air Animation")
+ @export var air_foot_spread: float = 14.0
+ @export var air_foot_lift: float = 12.0
+@@ -60,7 +74,7 @@
+ 	var direction: float = get_move_input()
+ 	
+ 	if direction != 0.0:
+-		facing - signf(direction)
++		facing = signf(direction)
+ 		
+ 	var target_velocity: float = direction * move_speed
+ 	var rate: float = acceleration

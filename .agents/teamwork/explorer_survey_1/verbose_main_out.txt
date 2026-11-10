@@ -1,0 +1,39 @@
+WorkerThreadPool: 16 threads, 4 max low-priority.
+Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org
+TextServer: Added interface "Dummy"
+TextServer: Added interface "ICU / HarfBuzz / Graphite (Built-in)"
+Using "default" pen tablet driver...
+
+TextServer: Primary interface set to: "ICU / HarfBuzz / Graphite (Built-in)".
+CORE API HASH: 2004498165
+EDITOR API HASH: 1696660745
+SceneTreeFTI: traversal method DEFAULT
+Loaded system CA certificates
+Loading resource: res://scenes/main.tscn remapped: res://scenes/main.tscn
+Loading resource: res://scripts/game/game_controller.gd remapped: res://scripts/game/game_controller.gd
+Completed load for: 'res://scripts/game/game_controller.gd' remapped 'res://scripts/game/game_controller.gd' at thread -1
+Completed load for: 'res://scenes/main.tscn' remapped 'res://scenes/main.tscn' at thread -1
+Loading resource: res://assets/audio/slash.wav remapped: res://assets/audio/slash.wav
+Loading resource: res://.godot/imported/slash.wav-c23cb59b0ceabbfe38a50714459d5291.sample remapped: res://.godot/imported/slash.wav-c23cb59b0ceabbfe38a50714459d5291.sample
+Completed load for: 'res://assets/audio/slash.wav' remapped 'res://assets/audio/slash.wav' at thread -1
+Loading resource: res://assets/audio/warp.wav remapped: res://assets/audio/warp.wav
+Loading resource: res://.godot/imported/warp.wav-368bfd5e34912a6451e0ddebfdac0962.sample remapped: res://.godot/imported/warp.wav-368bfd5e34912a6451e0ddebfdac0962.sample
+Completed load for: 'res://assets/audio/warp.wav' remapped 'res://assets/audio/warp.wav' at thread -1
+Loading resource: res://assets/audio/slowmo_enter.wav remapped: res://assets/audio/slowmo_enter.wav
+Loading resource: res://.godot/imported/slowmo_enter.wav-0587fc6d5c213279bfe273ab527ddef2.sample remapped: res://.godot/imported/slowmo_enter.wav-0587fc6d5c213279bfe273ab527ddef2.sample
+Completed load for: 'res://assets/audio/slowmo_enter.wav' remapped 'res://assets/audio/slowmo_enter.wav' at thread -1
+Loading resource: res://assets/audio/slowmo_exit.wav remapped: res://assets/audio/slowmo_exit.wav
+Loading resource: res://.godot/imported/slowmo_exit.wav-a1f37c40132a96eff3d7fbbc38d52f71.sample remapped: res://.godot/imported/slowmo_exit.wav-a1f37c40132a96eff3d7fbbc38d52f71.sample
+Completed load for: 'res://assets/audio/slowmo_exit.wav' remapped 'res://assets/audio/slowmo_exit.wav' at thread -1
+Loading resource: res://assets/audio/slice_kill.wav remapped: res://assets/audio/slice_kill.wav
+Loading resource: res://.godot/imported/slice_kill.wav-55d8e6d0d1b251d3144fb096f90a9abc.sample remapped: res://.godot/imported/slice_kill.wav-55d8e6d0d1b251d3144fb096f90a9abc.sample
+Completed load for: 'res://assets/audio/slice_kill.wav' remapped 'res://assets/audio/slice_kill.wav' at thread -1
+Loading resource: res://assets/audio/dash.wav remapped: res://assets/audio/dash.wav
+Loading resource: res://.godot/imported/dash.wav-c732fa599cfe157dd4267b88c75a825a.sample remapped: res://.godot/imported/dash.wav-c732fa599cfe157dd4267b88c75a825a.sample
+Completed load for: 'res://assets/audio/dash.wav' remapped 'res://assets/audio/dash.wav' at thread -1
+Loading resource: res://assets/audio/jump.wav remapped: res://assets/audio/jump.wav
+Loading resource: res://.godot/imported/jump.wav-7ea4d93114fa52c0b9979f6b2117f13f.sample remapped: res://.godot/imported/jump.wav-7ea4d93114fa52c0b9979f6b2117f13f.sample
+Completed load for: 'res://assets/audio/jump.wav' remapped 'res://assets/audio/jump.wav' at thread -1
+XR: Clearing primary interface
+XR: Removed interface "Native mobile"
+XR: Removed interface "OpenXR"

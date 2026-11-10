@@ -1,0 +1,11 @@
+--- a/new-game-project/tests/test_modular_rig.gd
++++ b/new-game-project/tests/test_modular_rig.gd
+@@ -440,5 +440,8 @@ func _test_packed_scene_backend_and_procedural_stickman() -> void:
+ 	# 6. Teardown & Clean Cleanup
++	var initial_orphans: float = Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
+ 	root.remove_child(rig_node)
+ 	rig_node.free()
+-	_assert(true, "Procedural stickman instance freed cleanly without orphan nodes")
++	_assert(not is_instance_valid(rig_node), "Procedural stickman instance marked invalid after free")
++	var final_orphans: float = Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
++	_assert(final_orphans <= initial_orphans, "Procedural stickman freed without leaking orphan nodes")

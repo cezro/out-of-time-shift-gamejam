@@ -1,0 +1,46 @@
+Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org
+
+=== RUNNING CORE KINEMATICS & COMBAT TEST SUITE ===
+  [PASS] test_step_horizontal_velocity_accel_decel
+  [PASS] test_step_horizontal_velocity_reverse_direction
+  [PASS] test_step_vertical_velocity_jump_and_gravity
+  [PASS] test_coyote_time_allows_late_jump
+  [PASS] test_jump_buffer_triggers_on_landing
+  [PASS] test_chrono_energy_drain_and_regen
+  [PASS] test_chrono_energy_teleport_cost_and_kill_reward
+  [PASS] test_chrono_time_dilation_math
+  [PASS] test_point_to_line_segment_distance_and_circle_intersection
+  [PASS] test_katana_arc_intersection
+  [PASS] test_combo_multiplier_scaling_and_decay
+  [PASS] test_enemy_ai_windup_transition_and_jump
+  [PASS] test_wave_scaling_formula
+  [PASS] test_wave_manager_progression
+  [PASS] test_ragdoll_slice_velocities_split
+  [PASS] test_degenerate_zero_length_teleport_segment
+  [PASS] test_zero_slice_direction_ragdoll_velocity_no_nan
+  [PASS] test_hitstop_duration_max_stacking
+  [PASS] test_screen_shake_clamping_and_decay
+  [PASS] test_combo_multiplier_all_tier_boundaries
+  [PASS] test_adversarial_ragdoll_piece_leak_verification
+  [PASS] test_adversarial_duplicate_slice_events_double_decrement_alive_count
+  [PASS] test_adversarial_wave_phase_zero_enemies_deadlock
+  [PASS] test_adversarial_enemy_out_of_bounds_recovery
+  [PASS] test_gunner_ai_tactical_distance_and_shooting
+  [PASS] test_gunner_spawning_and_bullet_firing_system
+  [PASS] test_bullet_system_slow_motion_dilation
+  [PASS] test_katana_slash_slashes_bullet_and_reduces_cooldown
+  [PASS] test_katana_slash_hits_enemy_and_reduces_cooldown
+  [PASS] test_chrono_warp_hits_enemy_reduces_cooldown_but_not_bullets
+  [PASS] test_wave_cleared_real_time_transition
+  [PASS] test_wave_manager_spawn_distribution_gunners
+  [PASS] test_adversarial_bullet_slice_race_condition
+  [PASS] test_adversarial_gunner_multi_attack_cycle_permanent_lockout
+  [PASS] test_adversarial_gunner_auto_burst_and_subsequent_cycle
+  [PASS] test_adversarial_slash_both_enemy_and_bullet_simultaneously
+  [PASS] test_adversarial_zero_distance_bullet_aiming_no_nan
+  [PASS] test_kinetic_dash_cancels_light_slash_recovery
+  [PASS] test_wall_slide_and_diagonal_wall_rebound_jump
+  [PASS] test_heavy_launcher_and_aerial_juggle_gravity
+  [PASS] test_downward_slam_shockwave_and_parry_bullet_reflection_with_sniper_ricochet
+  [PASS] test_dmc_style_rank_progression_d_to_sss
+=== TEST SUMMARY: 42 / 42 PASSED (0 FAILED) ===

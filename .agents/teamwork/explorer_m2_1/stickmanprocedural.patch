@@ -1,0 +1,22 @@
+--- a/new-game-project/scripts/stickman/stickmanprocedural.gd
++++ b/new-game-project/scripts/stickman/stickmanprocedural.gd
+@@ -129,9 +129,8 @@ func _physics_process(delta: float) -> void:
+ 	else:
+ 		velocity.y = minf(velocity.y + gravity * delta, maximum_fall_speed)
+ 
+-	var previous_position: Vector2 = global_position
+ 	move_and_slide()
+ 
+ 	var is_grounded: bool = is_on_floor()
+ 	var state: String = "run" if (is_grounded and absf(velocity.x) > 20.0) else ("air" if not is_grounded else "idle")
+ 
+@@ -370,7 +369,7 @@ func get_ik_targets() -> Dictionary:
+ 	}
+ 
+ 
+ ## Constructs a ModularAssetSystem.StickmanPose populated from this rig's live bone positions.
+-func to_stickman_pose(loadout_facing: float = 1.0) -> RefCounted:
++func to_stickman_pose(_loadout_facing: float = 1.0) -> RefCounted:
+ 	var bones := get_bone_positions()
+ 	var mas_script = load("res://scripts/modular_rig/modular_asset_system.gd")
+ 	if mas_script == null:

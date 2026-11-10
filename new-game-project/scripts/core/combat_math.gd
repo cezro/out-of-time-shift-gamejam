@@ -635,5 +635,3 @@ static func apply_slam_shockwave(
 			EnemyAI.launch_enemy(enemy, Vector2(push_x, s_launch_y), 0.75)
 			hit_count += 1
 	return hit_count
-
-

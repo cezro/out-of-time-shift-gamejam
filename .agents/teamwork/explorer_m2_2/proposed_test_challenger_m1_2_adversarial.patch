@@ -1,0 +1,47 @@
+--- a/tests/test_challenger_m1_2_adversarial.gd
++++ b/tests/test_challenger_m1_2_adversarial.gd
+@@ -112,7 +112,7 @@ func test_01_repeated_preset_instantiation_100x_memory_leak() -> bool:
+ 	var ok: bool = true
+ 	var registry = ModularRigScript.ModularAssetRegistry.new()
+ 
+-	var baseline_orphans: int = Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
++	var baseline_orphans: int = int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT))
+ 
+ 	const ITERATIONS: int = 100
+ 	for i in range(ITERATIONS):
+@@ -135,7 +135,7 @@ func test_01_repeated_preset_instantiation_100x_memory_leak() -> bool:
+ 		# Direct free
+ 		rig.free()
+ 
+-	var final_orphans: int = Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
++	var final_orphans: int = int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT))
+ 	var orphan_diff: int = final_orphans - baseline_orphans
+ 
+ 	ok = _check(orphan_diff <= 0, "No orphan nodes leaked across 100 instantiations (orphan_diff=%d)" % orphan_diff) and ok
+@@ -148,7 +148,7 @@ func test_02_tree_lifecycle_add_process_queue_free_50x() -> bool:
+ 	var tree_root: Window = root
+ 
+ 	var baseline_children_count: int = tree_root.get_child_count()
+-	var baseline_orphans: int = Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
++	var baseline_orphans: int = int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT))
+ 
+ 	const TREE_ITERATIONS: int = 50
+ 	for i in range(TREE_ITERATIONS):
+@@ -174,7 +174,7 @@ func test_02_tree_lifecycle_add_process_queue_free_50x() -> bool:
+ 		rig.free()
+ 
+ 	var final_children_count: int = tree_root.get_child_count()
+-	var final_orphans: int = Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
++	var final_orphans: int = int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT))
+ 
+ 	ok = _check(final_children_count == baseline_children_count,
+ 		"Tree root child count must remain clean: baseline=%d, final=%d" % [baseline_children_count, final_children_count]) and ok
+@@ -207,7 +207,7 @@ func test_03_direct_procedural_rig_extreme_inputs_and_edge_cases() -> bool:
+ 		for t_name in ik_targets.keys():
+ 			var t_node: Node2D = ik_targets[t_name]
+ 			ok = _check(t_node != null and t_node.position.is_finite(),
+-				"IK target '%s' must remain finite for scenario %s (got %s)" % [t_name, sc["state"], t_node.position if t_node else "null"]) and ok
++				"IK target '%s' must remain finite for scenario %s (got %s)" % [t_name, sc["state"], str(t_node.position) if t_node else "null"]) and ok
+ 
+ 		var pose = rig.to_stickman_pose()
+ 		ok = _check(pose != null, "to_stickman_pose() returned non-null pose") and ok

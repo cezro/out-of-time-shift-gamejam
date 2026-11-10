@@ -1,0 +1,161 @@
+--- a/new-game-project/scripts/stickman/stickmanprocedural.gd
++++ b/new-game-project/scripts/stickman/stickmanprocedural.gd
+@@ -161,19 +161,31 @@
+ 	_ensure_references()
+ 	current_anim_state = current_state
+ 
+-	# Update facing direction if non-zero
+-	if facing_direction != 0.0:
+-		facing = 1.0 if facing_direction >= 0.0 else -1.0
+-
+-	var speed: float = absf(p_velocity.x)
++	# Sanitize velocity and delta inputs against NaN/Inf
++	var safe_vel: Vector2 = p_velocity if (is_finite(p_velocity.x) and is_finite(p_velocity.y)) else Vector2.ZERO
++	var safe_delta: float = delta if (is_finite(delta) and delta >= 0.0) else 0.0
++
++	# Update facing direction if valid and non-zero; preserve valid +/-1.0 invariant
++	if not is_nan(facing_direction) and facing_direction != 0.0:
++		facing = 1.0 if facing_direction > 0.0 else -1.0
++	elif not is_finite(facing) or absf(facing) != 1.0:
++		facing = 1.0
++
++	# Guard against non-finite phase latching
++	if not is_finite(phase):
++		phase = 0.0
++
++	var speed: float = absf(safe_vel.x)
+ 	var speed_ratio: float = clampf(speed / maxf(move_speed, 1.0), 0.0, 1.0)
+ 
+ 	# Accumulate gait phase based on horizontal ground displacement
+ 	if is_on_ground and stride_length > 0.01:
+-		var distance_moved: float = speed * delta
++		var distance_moved: float = speed * safe_delta
+ 		phase = fposmod(phase + distance_moved / (stride_length * 2.0), 1.0)
+-
+-	update_target_animation(delta, speed_ratio, is_on_ground, p_velocity, current_state)
++		if not is_finite(phase):
++			phase = 0.0
++
++	update_target_animation(safe_delta, speed_ratio, is_on_ground, safe_vel, current_state)
+ 
+ 
+ ## Updates IK target positions by interpolating toward rest_position + computed offsets.
+@@ -184,6 +196,10 @@
+ 	p_velocity: Vector2 = Vector2.ZERO,
+ 	current_state: String = "idle"
+ ) -> void:
++	var safe_delta: float = delta if (is_finite(delta) and delta >= 0.0) else 0.0
++	var safe_speed_ratio: float = clampf(speed_ratio, 0.0, 1.0) if is_finite(speed_ratio) else 0.0
++	var safe_vel: Vector2 = p_velocity if (is_finite(p_velocity.x) and is_finite(p_velocity.y)) else Vector2.ZERO
++
+ 	var offsets: Dictionary = {}
+ 
+ 	# Default standing / resting pose
+@@ -191,28 +207,47 @@
+ 		offsets[target] = Vector2.ZERO
+ 
+ 	if not is_on_ground or current_state in ["jump", "fall", "air"]:
+-		apply_air_offsets(offsets, p_velocity)
++		apply_air_offsets(offsets, safe_vel)
+ 	elif current_state == "wall_slide":
+ 		apply_wall_slide_offsets(offsets)
+ 	elif current_state in ["slash", "heavy_slash"]:
+ 		apply_attack_offsets(offsets, current_state)
+ 	elif current_state == "parry_guard":
+ 		apply_parry_offsets(offsets)
+-	elif speed_ratio > 0.02 or current_state in ["run", "walk"]:
+-		apply_run_offsets(offsets, speed_ratio)
+-
+-	var weight: float = 1.0 - exp(-snappiness * delta) if delta > 0.0 else 1.0
++	elif safe_speed_ratio > 0.02 or current_state in ["run", "walk"]:
++		apply_run_offsets(offsets, safe_speed_ratio)
++
++	var safe_snappiness: float = snappiness if (is_finite(snappiness) and snappiness >= 0.0) else 18.0
++	var weight: float = clampf(1.0 - exp(-safe_snappiness * safe_delta), 0.0, 1.0) if safe_delta > 0.0 else 1.0
++	if not is_finite(weight):
++		weight = 1.0
+ 
+ 	for target in targets:
++		if target == null:
++			continue
+ 		var base_rest: Vector2 = get_mirrored_rest_position(target, facing)
+ 		var offset: Vector2 = offsets.get(target, Vector2.ZERO)
++		if not is_finite(offset.x) or not is_finite(offset.y):
++			offset = Vector2.ZERO
++
++		# Self-heal corrupted target position before lerp to break irreversible NaN latching
++		if not is_finite(target.position.x) or not is_finite(target.position.y):
++			target.position = base_rest
++
+ 		target.position = target.position.lerp(base_rest + offset, weight)
+ 
+ 
+ ## Calculates mirrored rest position relative to the hip center (HIP_REST_X) to support facing flip.
+ func get_mirrored_rest_position(target: Node2D, cur_facing: float) -> Vector2:
+-	var base_rest: Vector2 = rest_positions.get(target, target.position)
+-	if cur_facing >= 0.0:
++	var base_rest: Vector2 = rest_positions.get(target, Vector2.ZERO)
++	if not is_finite(base_rest.x) or not is_finite(base_rest.y):
++		if target != null and is_finite(target.position.x) and is_finite(target.position.y):
++			base_rest = target.position
++		else:
++			base_rest = Vector2(HIP_REST_X, 0.0)
++
++	var safe_facing: float = cur_facing if is_finite(cur_facing) else 1.0
++	if safe_facing >= 0.0:
+ 		return base_rest
+ 	var dx: float = base_rest.x - HIP_REST_X
+ 	return Vector2(HIP_REST_X - dx, base_rest.y)
+@@ -226,13 +261,14 @@
+ 	if foot_r == null or foot_l == null or arm_r == null or arm_l == null or head_target == null:
+ 		return
+ 
+-	var right_phase: float = phase
+-	var left_phase: float = fposmod(phase + 0.5, 1.0)
++	var safe_phase: float = phase if is_finite(phase) else 0.0
++	var right_phase: float = safe_phase
++	var left_phase: float = fposmod(safe_phase + 0.5, 1.0)
+ 
+ 	offsets[foot_r] = get_foot_offset(right_phase)
+ 	offsets[foot_l] = get_foot_offset(left_phase)
+ 
+-	var angle: float = phase * TAU
++	var angle: float = safe_phase * TAU
+ 	var arm_amount: float = lerpf(0.35, 1.0, speed_ratio)
+ 
+ 	# Hands counter-swing against their corresponding feet
+@@ -256,17 +292,18 @@
+ 
+ 
+ func get_foot_offset(cycle: float) -> Vector2:
++	var safe_cycle: float = clampf(cycle, 0.0, 1.0) if is_finite(cycle) else 0.0
+ 	var half_stride: float = stride_length * 0.5
+ 	var x: float = 0.0
+ 	var y: float = 0.0
+ 
+-	if cycle < 0.5:
++	if safe_cycle < 0.5:
+ 		# Stance: move backward relative to the character
+-		var t: float = cycle / 0.5
++		var t: float = safe_cycle / 0.5
+ 		x = lerpf(half_stride, -half_stride, t)
+ 	else:
+ 		# Swing: lift the foot and return it to the front
+-		var t: float = (cycle - 0.5) / 0.5
++		var t: float = (safe_cycle - 0.5) / 0.5
+ 		var eased: float = t * t * (3.0 - 2.0 * t)
+ 		x = lerpf(-half_stride, half_stride, eased)
+ 		y = -sin(t * PI) * foot_lift
+@@ -352,7 +389,11 @@
+ 		var b_path: String = bone_map[key]
+ 		var b_node: Node2D = skeleton.get_node_or_null(b_path)
+ 		if b_node != null:
+-			result[key] = to_local(b_node.global_position)
++			var local_pos: Vector2 = to_local(b_node.global_position)
++			if is_finite(local_pos.x) and is_finite(local_pos.y):
++				result[key] = local_pos
++			else:
++				result[key] = Vector2.ZERO
+ 
+ 	return result
+ 

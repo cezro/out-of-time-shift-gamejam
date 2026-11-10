@@ -1,0 +1,4 @@
+SCRIPT ERROR: Parse Error: Expected end of statement after expression, found "Identifier" instead.
+   at: GDScript::reload (c:/Users/Zero/Documents/GitHub Repositories/out-of-time-shift-gamejam/.agents/teamwork/explorer_survey_1/test_bad_syntax.gd:5)
+ERROR: Failed to load script "c:/Users/Zero/Documents/GitHub Repositories/out-of-time-shift-gamejam/.agents/teamwork/explorer_survey_1/test_bad_syntax.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript_resource_format.cpp:46)

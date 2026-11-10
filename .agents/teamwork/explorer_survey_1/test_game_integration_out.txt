@@ -1,0 +1,16 @@
+Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org
+
+=== RUNNING END-TO-END GAME INTEGRATION TEST SUITE ===
+  [PASS] test_01_scene_instantiation_hud_and_draw
+  [PASS] test_02_running_jumping_and_wall_rebound
+  [PASS] test_03_kinetic_dash_cancels_slash_recovery_and_spawns_echo
+  [PASS] test_04_light_slash_kills_enemy_and_spawns_split_ragdoll_halves
+  [PASS] test_05_heavy_launcher_juggles_enemy_and_awards_style
+  [PASS] test_06_downward_slam_landing_shockwave_launches_enemies
+  [PASS] test_07_parry_reflects_sniper_ricochet_bullet_and_reverse_gear_parry_kill
+  [PASS] test_08_chrono_warp_teleports_spawns_beam_and_slices_enemy
+  [PASS] test_09_chrono_shift_gear_3_engagement_and_release_persistence
+  [PASS] test_10_timeline_shifting_past_present_future_and_chrono_echo_detonation
+  [PASS] test_11_campaign_traversal_mode_toggle_and_camera_follow
+  [PASS] test_12_live_piece_by_piece_modular_customization_cycling
+=== INTEGRATION TEST SUMMARY: 12 / 12 PASSED (0 FAILED) ===

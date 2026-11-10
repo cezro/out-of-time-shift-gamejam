@@ -1,0 +1,40 @@
+--- a/run_tests.bat
++++ b/run_tests.bat
+@@ -2,25 +2,32 @@
+ set "GODOT_PATH=D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe"
++if not exist "%GODOT_PATH%" (
++    set "GODOT_PATH=godot"
++)
+ set "PROJ=%~dp0new-game-project"
+ 
+-echo [1/5] Running Core Kinematics ^& Combat Suite...
++echo [1/6] Running Core Kinematics ^& Combat Suite...
+ "%GODOT_PATH%" --headless --path "%PROJ%" --script res://tests/test_core.gd 2>&1
+ if errorlevel 1 exit /b 1
+ 
+-echo [2/5] Running Chronos Shift ^& Timeline Suite...
++echo [2/6] Running Chronos Shift ^& Timeline Suite...
+ "%GODOT_PATH%" --headless --path "%PROJ%" --script res://tests/test_chrono_and_timeline.gd 2>&1
+ if errorlevel 1 exit /b 1
+ 
+-echo [3/5] Running Modular Piece-by-Piece Rig Suite...
++echo [3/6] Running Modular Piece-by-Piece Rig Suite...
+ "%GODOT_PATH%" --headless --path "%PROJ%" --script res://tests/test_modular_rig.gd 2>&1
+ if errorlevel 1 exit /b 1
+ 
+-echo [4/5] Running End-to-End Game Scene Integration Suite...
++echo [4/6] Running Procedural Stickman Rig Empirical Stress Suite...
++"%GODOT_PATH%" --headless --path "%PROJ%" --script res://tests/test_stickman_procedural_stress.gd 2>&1
++if errorlevel 1 exit /b 1
++
++echo [5/6] Running End-to-End Game Scene Integration Suite...
+ "%GODOT_PATH%" --headless --path "%PROJ%" --script res://tests/test_game_integration.gd 2>&1
+ if errorlevel 1 exit /b 1
+ 
+-echo [5/5] Running Disprover Adversarial Red-Team Suite...
++echo [6/6] Running Disprover Adversarial Red-Team Suite...
+ "%GODOT_PATH%" --headless --path "%PROJ%" --script res://tests/test_adversarial_disprover.gd 2>&1
+ if errorlevel 1 exit /b 1
+ 
+-echo ALL 5 TEST SUITES PASSED!
++echo ALL 6 TEST SUITES PASSED!

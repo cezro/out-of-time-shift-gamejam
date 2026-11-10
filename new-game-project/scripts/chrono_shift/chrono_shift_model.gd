@@ -207,10 +207,10 @@ class _Core extends RefCounted:
 		var dx: float = 0.0 if is_nan(delta.x) else clampf(delta.x, -MAX_DELTA, MAX_DELTA)
 		var dy: float = 0.0 if is_nan(delta.y) else clampf(delta.y, -MAX_DELTA, MAX_DELTA)
 		var d := Vector2(dx, dy)
-		var len: float = d.length()
-		if len <= 0.0:
+		var d_len: float = d.length()
+		if d_len <= 0.0:
 			return curr
-		var n: int = maxi(1, int(ceilf(len / MAX_SUBSTEP)))
+		var n: int = maxi(1, int(ceilf(d_len / MAX_SUBSTEP)))
 		var step: Vector2 = d / float(n)
 		for _i in range(n):
 			curr = micro_step(curr, step)
@@ -937,7 +937,10 @@ class ChronoShifterState extends RefCounted:
 		var was: bool = is_dilating
 		slowmo_factor = dilation
 		is_dilating = dilation < DILATING_THRESHOLD
-		dilation_edge = is_dilating if is_dilating != was else null
+		if is_dilating != was:
+			dilation_edge = is_dilating
+		else:
+			dilation_edge = null
 
 		if out.seated != -1 and model.held:
 			trigger_shake(1.2)

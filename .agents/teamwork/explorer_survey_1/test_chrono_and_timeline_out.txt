@@ -1,0 +1,39 @@
+Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org
+
+=== Running Chronos Shift & Timeline System Test Suite ===
+  [PASS] 01_gear_positions_are_legal_and_dilations_strictly_decrease
+  [PASS] 02_fuzz_constrain_step_always_legal_and_never_tunnels
+  [PASS] 03_huge_deltas_cannot_tunnel_through_walls
+  [PASS] 04_detent_seats_into_gear_and_rail
+  [PASS] 05_engagement_is_monotonic_and_bounded
+  [PASS] 06_drain_mapping_monotonic_and_matches_table
+  [PASS] 07_planned_paths_are_legal_and_reach_target
+  [PASS] 08_wheel_shifts_are_sequential_and_legal
+  [PASS] 09_gear_persists_on_release_and_manual_neutral_return
+  [PASS] 10_stall_forces_neutral_and_locks_until_twenty_percent
+  [PASS] 11_drag_moves_knob_through_gate
+  [PASS] 12_fuzz_shifter_model_random_inputs
+  [PASS] 13_readout_format
+  [PASS] 14_energy_update_with_drain_helper
+  [PASS] 15_app_chrono_state_follows_shifter
+  [PASS] 16_app_meter_drains_faster_in_higher_gears
+  [PASS] 17_app_meter_stalls_at_zero
+  [PASS] 18_adversarial_floating_point_precision_traps
+  [PASS] 19_adversarial_rapid_opposing_inputs_anti_tunneling
+  [PASS] 20_adversarial_meter_depletion_and_recovery_hysteresis
+  [PASS] 21_adversarial_camera_shake_overflow_and_audio_edges
+  [PASS] 22_adversarial_scheduling_order_and_concurrent_inputs
+  [PASS] 23_adversarial_warp_and_shift_energy_starvation
+  [PASS] 24_gear_acclimatization_flawless_progression_and_mastery
+  [PASS] 25_gear_acclimatization_miss_penalty_and_streak_reset
+  [PASS] 26_burnout_multiplier_consecutive_vs_skipped_gears
+  [PASS] 27_app_gear_persists_across_shift_presses_and_changes
+  [PASS] 28_hold_shift_move_to_1st_release_shift_maintains_1st
+  [PASS] 29_drag_diagonal_to_1st_maintains_1st
+  [PASS] 30_mastery_near_zero_and_gear3_matches_gear2_initial_drain_positive_proof
+  [PASS] 31_reverse_gear_and_turbo_shifter_overdrive_and_knockdown
+  [PASS] 32_timeline_switching_at_chronos_wells_preserving_velocity
+  [PASS] 33_phase_traversal_scenarios_missing_platforms_laser_phasing_momentum_chaining
+  [PASS] 34_chrono_echo_creation_decay_and_detonation
+  [PASS] 35_lore_glyph_collection_in_timeline_pockets
+=== ALL 35/35 TESTS PASSED (failed: 0) ===

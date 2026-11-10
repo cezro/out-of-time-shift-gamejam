@@ -1,0 +1,14 @@
+WARNING: The local variable "previous_position" is declared but never used in the block. If this is intended, prefix it with an underscore: "_previous_position".
+   at: GDScript::reload (res://scripts/stickman/stickmanprocedural.gd:132)
+   GDScript backtrace (most recent call first):
+       [0] instantiate_rig (res://scripts/modular_rig/modular_asset_system.gd:749)
+       [1] instantiate_rig (res://scripts/modular_rig/modular_asset_system.gd:1273)
+       [2] _test_packed_scene_backend_and_procedural_stickman (res://tests/test_modular_rig.gd:401)
+       [3] _init (res://tests/test_modular_rig.gd:23)
+WARNING: The parameter "loadout_facing" is never used in the function "to_stickman_pose()". If this is intended, prefix it with an underscore: "_loadout_facing".
+   at: GDScript::reload (res://scripts/stickman/stickmanprocedural.gd:373)
+   GDScript backtrace (most recent call first):
+       [0] instantiate_rig (res://scripts/modular_rig/modular_asset_system.gd:749)
+       [1] instantiate_rig (res://scripts/modular_rig/modular_asset_system.gd:1273)
+       [2] _test_packed_scene_backend_and_procedural_stickman (res://tests/test_modular_rig.gd:401)
+       [3] _init (res://tests/test_modular_rig.gd:23)

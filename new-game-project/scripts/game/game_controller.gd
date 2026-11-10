@@ -854,7 +854,6 @@ func step_simulation(real_dt: float, input_override: Dictionary = {}) -> void:
 	if timeline_shift_pressed:
 		perform_timeline_shift(target_era_input)
 
-	var world_dt: float = chrono.get_world_dt(dt)
 	var player_dt: float = chrono.get_player_dt(dt)
 	var turbo_mult: float = shifter.acclimatization.get_turbo_speed_multiplier(shifter.model.get_active_gear())
 	player_dt *= turbo_mult
@@ -2251,24 +2250,24 @@ func _draw_seven_segment_glyph(center_scr: Vector2, ch: String, half_size: float
 		return
 	var w: float = half_size * 0.75
 	var h: float = half_size
-	var tl := center_scr + Vector2(-w, -h)
-	var tr := center_scr + Vector2(w, -h)
-	var ml := center_scr + Vector2(-w, 0.0)
-	var mr := center_scr + Vector2(w, 0.0)
-	var bl := center_scr + Vector2(-w, h)
-	var br := center_scr + Vector2(w, h)
+	var pt_tl := center_scr + Vector2(-w, -h)
+	var pt_tr := center_scr + Vector2(w, -h)
+	var pt_ml := center_scr + Vector2(-w, 0.0)
+	var pt_mr := center_scr + Vector2(w, 0.0)
+	var pt_bl := center_scr + Vector2(-w, h)
+	var pt_br := center_scr + Vector2(w, h)
 
 	if segs[0]:
-		_d_line(tl, tr, col, 1.8) # a (top)
+		_d_line(pt_tl, pt_tr, col, 1.8) # a (top)
 	if segs[1]:
-		_d_line(tr, mr, col, 1.8) # b (top-right)
+		_d_line(pt_tr, pt_mr, col, 1.8) # b (top-right)
 	if segs[2]:
-		_d_line(mr, br, col, 1.8) # c (bottom-right)
+		_d_line(pt_mr, pt_br, col, 1.8) # c (bottom-right)
 	if segs[3]:
-		_d_line(bl, br, col, 1.8) # d (bottom)
+		_d_line(pt_bl, pt_br, col, 1.8) # d (bottom)
 	if segs[4]:
-		_d_line(ml, bl, col, 1.8) # e (bottom-left)
+		_d_line(pt_ml, pt_bl, col, 1.8) # e (bottom-left)
 	if segs[5]:
-		_d_line(tl, ml, col, 1.8) # f (top-left)
+		_d_line(pt_tl, pt_ml, col, 1.8) # f (top-left)
 	if segs[6]:
-		_d_line(ml, mr, col, 1.8) # g (middle)
+		_d_line(pt_ml, pt_mr, col, 1.8) # g (middle)

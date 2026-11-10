@@ -695,7 +695,7 @@ func attack_3a_malformed_json_manifests_graceful_degradation() -> bool:
 
 func attack_3b_invalid_slot_names_and_numbers_and_missing_textures() -> bool:
 	var ok: bool = true
-	var reg := ModularAssetScript.ModularAssetRegistry.new()
+	var _reg := ModularAssetScript.ModularAssetRegistry.new()
 
 	# Pass invalid slot names, out-of-range negative/huge slot numbers, and missing texture paths
 	var part_bad_slot_num := ModularAssetScript.PartPieceSpec.from_dict({

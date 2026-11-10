@@ -1,0 +1,4 @@
+WARNING: The variable "len" has the same name as a built-in function.
+   at: GDScript::reload (res://scripts/chrono_shift/chrono_shift_model.gd:210)
+WARNING: Values of the ternary operator are not mutually compatible.
+   at: GDScript::reload (res://scripts/chrono_shift/chrono_shift_model.gd:940)

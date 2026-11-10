@@ -1,0 +1,20 @@
+--- a/scripts/stickman/stickmanprocedural.gd
++++ b/scripts/stickman/stickmanprocedural.gd
+@@ -129,7 +129,7 @@ func _step_simulation(delta: float) -> void:
+ 	else:
+ 		velocity.y = minf(velocity.y + gravity * delta, maximum_fall_speed)
+ 
+-	var previous_position: Vector2 = global_position
++	var _previous_position: Vector2 = global_position
+ 	move_and_slide()
+ 
+ 	var is_grounded: bool = is_on_floor()
+@@ -370,7 +370,7 @@ func get_ik_targets() -> Dictionary:
+ 
+ 
+ ## Constructs a ModularAssetSystem.StickmanPose populated from this rig's live bone positions.
+-func to_stickman_pose(loadout_facing: float = 1.0) -> RefCounted:
++func to_stickman_pose(_loadout_facing: float = 1.0) -> RefCounted:
+ 	var bones := get_bone_positions()
+ 	var mas_script = load("res://scripts/modular_rig/modular_asset_system.gd")
+ 	if mas_script == null:

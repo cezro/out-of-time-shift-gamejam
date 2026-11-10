@@ -46,14 +46,14 @@ class PhasePlatformData extends RefCounted:
 	var era: int = -1
 
 	func _init(
-		center_x: float = 0.0,
+		p_center_x: float = 0.0,
 		p_y: float = 0.0,
 		p_width: float = 200.0,
 		p_era: int = -1,
 		p_thickness: float = 12.0
 	) -> void:
-		min_x = center_x - p_width * 0.5
-		max_x = center_x + p_width * 0.5
+		min_x = p_center_x - p_width * 0.5
+		max_x = p_center_x + p_width * 0.5
 		y = p_y
 		era = p_era
 		thickness = p_thickness

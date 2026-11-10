@@ -1,0 +1,71 @@
+--- a/new-game-project/scripts/stickman/stickmanprocedural.gd
++++ b/new-game-project/scripts/stickman/stickmanprocedural.gd
+@@ -370,6 +370,16 @@
+ 	}
+ 
+ 
++## Converts character-local Godot 2D coordinates (+Y DOWN) to simulation coordinates (+Y UP).
++## Preserves horizontal coordinates (X) exactly, inverting only the vertical component (Y).
++static func _to_sim_coord(local_pos: Vector2) -> Vector2:
++	var safe_x: float = local_pos.x if is_finite(local_pos.x) else 0.0
++	var safe_y: float = local_pos.y if is_finite(local_pos.y) else 0.0
++	return Vector2(safe_x, -safe_y)
++
++
++## Constructs a ModularAssetSystem.StickmanPose populated from this rig's live bone positions.
++## Transforms coordinates from Godot 2D character-local space (+Y DOWN) into simulation space (+Y UP).
+ func to_stickman_pose(loadout_facing: float = 1.0) -> RefCounted:
+ 	var bones := get_bone_positions()
+ 	var mas_script = load("res://scripts/modular_rig/modular_asset_system.gd")
+@@ -380,21 +390,36 @@
+ 	if bones.is_empty():
+ 		return pose
+ 
+-	pose.head_center = bones.get("head_center", Vector2.ZERO)
+-	pose.neck = bones.get("neck", Vector2.ZERO)
+-	pose.pelvis = bones.get("pelvis", Vector2.ZERO)
+-	pose.left_shoulder = bones.get("left_shoulder", Vector2.ZERO)
+-	pose.left_elbow = bones.get("left_elbow", Vector2.ZERO)
+-	pose.left_hand = bones.get("left_hand", Vector2.ZERO)
+-	pose.right_shoulder = bones.get("right_shoulder", Vector2.ZERO)
+-	pose.right_elbow = bones.get("right_elbow", Vector2.ZERO)
+-	pose.right_hand = bones.get("right_hand", Vector2.ZERO)
+-	pose.left_hip = bones.get("left_hip", Vector2.ZERO)
+-	pose.left_knee = bones.get("left_knee", Vector2.ZERO)
+-	pose.left_foot = bones.get("left_foot", Vector2.ZERO)
+-	pose.right_hip = bones.get("right_hip", Vector2.ZERO)
+-	pose.right_knee = bones.get("right_knee", Vector2.ZERO)
+-	pose.right_foot = bones.get("right_foot", Vector2.ZERO)
++	pose.head_center = _to_sim_coord(bones.get("head_center", Vector2.ZERO))
++	pose.neck = _to_sim_coord(bones.get("neck", Vector2.ZERO))
++	pose.pelvis = _to_sim_coord(bones.get("pelvis", Vector2.ZERO))
++	pose.left_shoulder = _to_sim_coord(bones.get("left_shoulder", Vector2.ZERO))
++	pose.left_elbow = _to_sim_coord(bones.get("left_elbow", Vector2.ZERO))
++	pose.left_hand = _to_sim_coord(bones.get("left_hand", Vector2.ZERO))
++	pose.right_shoulder = _to_sim_coord(bones.get("right_shoulder", Vector2.ZERO))
++	pose.right_elbow = _to_sim_coord(bones.get("right_elbow", Vector2.ZERO))
++	pose.right_hand = _to_sim_coord(bones.get("right_hand", Vector2.ZERO))
++	pose.left_hip = _to_sim_coord(bones.get("left_hip", Vector2.ZERO))
++	pose.left_knee = _to_sim_coord(bones.get("left_knee", Vector2.ZERO))
++	pose.left_foot = _to_sim_coord(bones.get("left_foot", Vector2.ZERO))
++	pose.right_hip = _to_sim_coord(bones.get("right_hip", Vector2.ZERO))
++	pose.right_knee = _to_sim_coord(bones.get("right_knee", Vector2.ZERO))
++	pose.right_foot = _to_sim_coord(bones.get("right_foot", Vector2.ZERO))
+ 	pose.stance = current_anim_state
++
++	var eff_facing: float = facing if (is_finite(facing) and facing != 0.0) else (
++		loadout_facing if (is_finite(loadout_facing) and loadout_facing != 0.0) else 1.0
++	)
++	var face_dir: float = 1.0 if eff_facing >= 0.0 else -1.0
++
++	pose.sword_hilt = pose.right_hand
++	pose.sword_tip = pose.right_hand + Vector2(face_dir * 28.0, -14.0)
++
++	var head_back: Vector2 = pose.head_center + Vector2(-face_dir * pose.head_radius, 0.0)
++	pose.scarf_nodes = [
++		head_back + Vector2(-face_dir * 8.0, 1.0),
++		head_back + Vector2(-face_dir * 18.0, -1.0),
++		head_back + Vector2(-face_dir * 28.0, -4.0),
++	]
++
+ 	return pose
